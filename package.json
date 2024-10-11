@@ -1,0 +1,40 @@
+{
+  "name": "todo-app-api",
+  "version": "1.0.0",
+  "main": "server-app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "nodemon": "^3.1.7",
+    "sqlite3": "^5.1.7"
+  },
+  "description": "",
+  "build": {
+    "appId": "com.example.myapp",
+    "files": [
+      "main.js",
+      "server.js",
+      "icon.png",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "target": "dmg"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "devDependencies": {
+    "electron-builder": "^25.1.7"
+  }
+}
