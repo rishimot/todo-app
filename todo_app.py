@@ -219,9 +219,12 @@ class KanbanColumn(QListWidget):
                 delete_task_from_db(task_id)
                 self.kanban_board.action_history.record({
                     'type': 'delete_task',
+                    'task_id': task_id,
                     'task_data': (deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, column.id),
                     'task2labels_id': deleted_task2labels_id,
                     'labels_id': deleted_labels_id,
+                    'source_column': column,
+                    'original_row': column.row(selected_item),
                 })
             self.clearFocus()
 
