@@ -1,0 +1,14 @@
+node_modules/
+.venv
+venv
+tmp/
+old/
+dist/
+icon/
+package-lock.json
+*.spec
+postman
+build/
+build_exe.bat
+__pycache__/
+python_node_version.txt
