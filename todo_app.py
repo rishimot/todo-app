@@ -55,8 +55,9 @@ from PyQt6.QtWidgets import (
 sio = socketio.Client()
 
 class PopupWindow(QDialog):
-    def __init__(self, text, item, parent=None):
-        super().__init__(parent)
+    def __init__(self, text, item, kanban_board=None):
+        super().__init__()
+        self.kanban_board = kanban_board
         self.text = text
         self.item = item
         self.init_ui()
@@ -77,7 +78,7 @@ class PopupWindow(QDialog):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        self.parent().parent.open_edit_task_dialog(self.item)
+        self.kanban_board.open_edit_task_dialog(self.item)
         super().mouseDoubleClickEvent(event)
 
 
@@ -94,18 +95,27 @@ class SearchBox(QLineEdit):
         splitted_search_texts = search_text.split(' ')
         for splitted_search_text in splitted_search_texts:
             if splitted_search_text.startswith('tag:'):
-                search_label = splitted_search_text[4:]
+                search_text = splitted_search_text[4:]
+                is_exclude = search_text.startswith('!')
+                search_label = search_text[1:] if is_exclude else search_text
                 label2tasks = get_label2task_from_db(search_label)
                 task_ids = [ task_id for _, task_id, _ in label2tasks] 
                 for index in range(column.count()):
                     item = column.item(index)
                     task_id = item.data(Qt.ItemDataRole.UserRole) 
-                    item.setHidden(task_id not in task_ids)
+                    if is_exclude:
+                        item.setHidden(task_id in task_ids)
+                    else:
+                        item.setHidden(task_id not in task_ids)
             else:
                 for index in range(column.count()):
                     item = column.item(index)
                     item_text = item.text()
-                    item.setHidden(item_text.find(splitted_search_text) == -1)
+                    if item_text.startswith('!'):
+                        item_text = item_text[1:]
+                        item.setHidden(item_text.find(splitted_search_text) != -1)
+                    else:
+                        item.setHidden(item_text.find(splitted_search_text) == -1)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Delete:
@@ -235,7 +245,7 @@ class KanbanColumn(QListWidget):
         if selected_items:
             item_text = selected_items[0].text()
             if self.popup_window is None or not self.popup_window.isVisible():
-                self.popup_window = PopupWindow(item_text, selected_items[0], self)
+                self.popup_window = PopupWindow(item_text, selected_items[0], self.parent)
                 self.popup_window.show()
             else:
                 self.popup_window.close()
