@@ -18,7 +18,6 @@ from utils import (
     delete_task2label_from_db,
     add_task2label_in_db,
     add_task_to_db,
-    SERVER_URL,
 )
 from PyQt6.QtCore import (
     Qt,
@@ -674,6 +673,7 @@ class TaskDialog(QDialog):
         ok_shortcut.activated.connect(self.handle_accept)
 
     def handle_accept(self):
+        print("T: handle_accept")
         self.add_label()
         if self.parent() is not None:
             self.parent().focus_next_dialog(id(self))

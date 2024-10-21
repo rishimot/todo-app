@@ -3,8 +3,8 @@ import ctypes
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
-from utils import add_task_in_db
-from todo_app_with_server import TaskDialog
+from utils import add_task_to_db, add_task2label_in_db
+from todo_app import TaskDialog
 from ctypes import wintypes
 import win32con
 
@@ -25,8 +25,6 @@ class LancherTaskDialog(TaskDialog):
         super().__init__()
         self.setWindowIcon(QIcon("icon/space_rocket.ico"))  
         self.setWindowTitle("Lancher Task")
-        self.dialog_button.accepted.connect(self.post_task)
-        self.dialog_button.rejected.connect(self.clear_input)
 
     def toggle_window(self):
         if self.isHidden():
@@ -48,16 +46,24 @@ class LancherTaskDialog(TaskDialog):
         task_goal = self.task_goal.text()
         task_detail = self.task_detail.toPlainText()
         task_deadline = self.task_deadline.text()
+        labels_id = self.newlabels_id
         if task_deadline == "":
             task_deadline = None
         status_id = self.status_combo.itemData(self.status_combo.currentIndex()) 
-        add_task_in_db((task_name, task_goal, task_detail, task_deadline, status_id))
+        task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, status_id))
+        for label_id in labels_id:
+            add_task2label_in_db(task_id=task_id, label_id=label_id)
         self.clear_input()
     
-    def push_ok(self):
+    def handle_accept(self):
+        self.add_label()
         self.post_task()
-        return super().push_ok()
-    
+        self.accept()
+
+    def handle_reject(self):
+        self.clear_input()
+        self.reject()
+
     def clear_input(self):
         self.task_name.clear()
         self.task_goal.clear()
