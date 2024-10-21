@@ -540,11 +540,16 @@ class KanbanBoard(QWidget):
             next_dialog.activateWindow()
             next_dialog.raise_()
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(event)
+
     def closeEvent(self, event):
         #self.action_history.save()
         #sio.disconnect()
         event.accept()
-
 
 class TaskDialog(QDialog):
     def __init__(self, parent=None):
@@ -726,6 +731,7 @@ class TaskDialog(QDialog):
         if self.parent() is not None:
             self.parent().focus_next_dialog(id(self))
         event.accept()
+
 
 class CalendarDialog(QDialog):
     def __init__(self, on_date_selected):
