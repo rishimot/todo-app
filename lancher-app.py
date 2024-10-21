@@ -46,9 +46,9 @@ class LancherTaskDialog(TaskDialog):
         task_goal = self.task_goal.text()
         task_detail = self.task_detail.toPlainText()
         task_deadline = self.task_deadline.text()
-        labels_id = self.newlabels_id
         if task_deadline == "":
             task_deadline = None
+        labels_id = self.newlabels_id
         status_id = self.status_combo.itemData(self.status_combo.currentIndex()) 
         task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, status_id))
         for label_id in labels_id:
