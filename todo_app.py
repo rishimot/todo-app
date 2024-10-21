@@ -31,6 +31,7 @@ from PyQt6.QtGui import(
     QShortcut,
     QMouseEvent,
     QDesktopServices,
+    QFont,
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -54,19 +55,24 @@ from PyQt6.QtWidgets import (
 
 sio = socketio.Client()
 
-class PopupWindow(QDialog):
+class PopupTaskWindow(QDialog):
     def __init__(self, text, item, kanban_board=None):
         super().__init__()
         self.kanban_board = kanban_board
         self.text = text
         self.item = item
+        self.start_pos = None
         self.init_ui()
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 50)
 
         layout = QVBoxLayout()
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(10)
         label = QLabel(self.text, self)
+        label.setFont(font)
         layout.addWidget(label)
         self.setLayout(layout)
 
@@ -80,6 +86,29 @@ class PopupWindow(QDialog):
     def mouseDoubleClickEvent(self, event):
         self.kanban_board.open_edit_task_dialog(self.item)
         super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_pos = event.globalPosition().toPoint()  
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.start_pos is not None:
+            new_position = self.pos() + (event.globalPosition().toPoint() - self.start_pos)
+
+            screen = QApplication.primaryScreen()
+            screen_geometry = screen.geometry()
+            new_x = max(screen_geometry.left(), min(new_position.x(), screen_geometry.right() - self.width()))
+            new_y = max(screen_geometry.top(), min(new_position.y(), screen_geometry.bottom() - self.height()))
+
+            self.move(new_x, new_y)  
+            self.start_pos = event.globalPosition().toPoint() 
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_pos = None
+        super().mouseReleaseEvent(event)
 
 
 class SearchBox(QLineEdit):
@@ -245,7 +274,7 @@ class KanbanColumn(QListWidget):
         if selected_items:
             item_text = selected_items[0].text()
             if self.popup_window is None or not self.popup_window.isVisible():
-                self.popup_window = PopupWindow(item_text, selected_items[0], self.parent)
+                self.popup_window = PopupTaskWindow(item_text, selected_items[0], self.parent)
                 self.popup_window.show()
             else:
                 self.popup_window.close()
