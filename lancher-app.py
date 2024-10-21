@@ -39,7 +39,7 @@ class LancherTaskDialog(TaskDialog):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            self.hide()
+            self.clear_input()
             return
         super().keyPressEvent(event)
     

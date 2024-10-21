@@ -56,16 +56,15 @@ from PyQt6.QtWidgets import (
 sio = socketio.Client()
 
 class PopupWindow(QDialog):
-    def __init__(self, text, item, kanban_board):
-        super().__init__()
+    def __init__(self, text, item, parent=None):
+        super().__init__(parent)
         self.text = text
         self.item = item
-        self.kanban_board = kanban_board
         self.init_ui()
-    
+
     def init_ui(self):
         self.setGeometry(0, 0, 200, 50)
-        
+
         layout = QVBoxLayout()
         label = QLabel(self.text, self)
         layout.addWidget(label)
@@ -79,15 +78,15 @@ class PopupWindow(QDialog):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        self.kanban_board.open_edit_task_dialog(self.item)
+        self.parent().parent().open_edit_task_dialog(self.item)
         super().mouseDoubleClickEvent(event)
-    
+
 
 class SearchBox(QLineEdit):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.init_ui()
-    
+
     def init_ui(self):
         self.setPlaceholderText("Search...")
 
@@ -122,8 +121,8 @@ class SearchBox(QLineEdit):
 class KanbanColumn(QListWidget):
     def __init__(self, title, parent=None):
         super().__init__()
+        self.parent = parent
         self.id, self.name = get_status_by_name_from_db(title)
-        self.kanban_board = parent
         self.popup_window = None
         self.init_ui()
 
@@ -154,7 +153,7 @@ class KanbanColumn(QListWidget):
             self.takeItem(self.row(item))
             self.insertItem(drop_row, item)
 
-            self.kanban_board.action_history.record({
+            self.parent.action_history.record({
                 'type': 'move_task',
                 'source_column': self,
                 'target_column': self,
@@ -178,7 +177,7 @@ class KanbanColumn(QListWidget):
             task = (task_id, task_name, task_goal, task_detail, task_deadline, self.id)
             update_task_in_db(task)
 
-            self.kanban_board.action_history.record({
+            self.parent.action_history.record({
                 'type': 'move_task',
                 'source_column': event.source(),
                 'target_column': self,
@@ -193,7 +192,7 @@ class KanbanColumn(QListWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Delete:
-            self.detele_selected_item()  
+            self.detele_selected_item()
             return
         if event.key() == Qt.Key.Key_Escape:
             if self.selectedItems():
@@ -203,10 +202,10 @@ class KanbanColumn(QListWidget):
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.show_popup_item()
             return
-        super().keyPressEvent(event)  
+        super().keyPressEvent(event)
 
     def detele_selected_item(self):
-        selected_items = self.selectedItems()  
+        selected_items = self.selectedItems()
         if selected_items:
             for selected_item in selected_items:
                 task_id = selected_item.data(Qt.ItemDataRole.UserRole) 
@@ -217,7 +216,7 @@ class KanbanColumn(QListWidget):
                 deleted_labels_id = [ labels_id for _, labels_id, _, _ in task2labels]
                 deleted_task2labels_id = get_task2label_from_db(task_id)
                 delete_task_from_db(task_id)
-                self.kanban_board.action_history.record({
+                self.parent.action_history.record({
                     'type': 'delete_task',
                     'task_id': task_id,
                     'task_data': (deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, column.id),
@@ -237,7 +236,7 @@ class KanbanColumn(QListWidget):
         if selected_items:
             item_text = selected_items[0].text()
             if self.popup_window is None or not self.popup_window.isVisible():
-                self.popup_window = PopupWindow(item_text, selected_items[0], self.kanban_board)
+                self.popup_window = PopupWindow(item_text, selected_items[0], self)
                 self.popup_window.show()
             else:
                 self.popup_window.close()
@@ -250,10 +249,11 @@ class KanbanBoard(QWidget):
         super().__init__()
         self.action_history = ActionHistory(self)
         self.tasks_priority = {}
+        self.dialogs = {}
         self.init_ui()
         self.load_tasks()
         self.setup_shortcuts()
-    
+
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/dokuro_switch.ico"))
         self.setWindowTitle("TODO App")
@@ -270,10 +270,10 @@ class KanbanBoard(QWidget):
             "DONE": self.done_column,
         }
 
-        self.todo_search_box = SearchBox()
-        self.doing_search_box = SearchBox()
-        self.waiting_search_box = SearchBox()
-        self.done_search_box = SearchBox()
+        self.todo_search_box = SearchBox(self)
+        self.doing_search_box = SearchBox(self)
+        self.waiting_search_box = SearchBox(self)
+        self.done_search_box = SearchBox(self)
 
         self.layout = QHBoxLayout()
         self.layout.addWidget(self.create_column("TODO", self.todo_column, self.todo_search_box))
@@ -417,6 +417,8 @@ class KanbanBoard(QWidget):
     def open_add_task_dialog(self, column):
         dialog = TaskDialog(self)
         dialog.status_combo.setCurrentText(column.name) 
+        dialog.show()
+        self.dialogs[id(dialog)] = dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             task_name = dialog.task_name.text()
             task_goal = dialog.task_goal.text()
@@ -456,6 +458,8 @@ class KanbanBoard(QWidget):
         dialog.task_deadline.setText(old_task_deadline)
         dialog.status_combo.setCurrentText(old_status_name) 
         dialog.display_labels(old_task2labels_id)
+        dialog.show()
+        self.dialogs[id(dialog)] = dialog
         if dialog.exec() == QDialog.DialogCode.Accepted:
             new_task_name = dialog.task_name.text()
             new_task_goal = dialog.task_goal.text()
@@ -469,8 +473,9 @@ class KanbanBoard(QWidget):
                 add_task2label_in_db(task_id=task_id, label_id=label_id)
             self.update_item(item, new_task)
             self.insert_item_in_column(item)
-            new_task2labels_id = get_task2label_from_db(task_id)
-            new_task_labels_id = [label_id for _, label_id, _, _ in new_task2labels_id]
+            new_task2labels = get_task2label_from_db(task_id)
+            new_task2labels_id = [task2label_id for task2label_id, _, _, _ in new_task2labels]
+            new_task_labels_id = [label_id  for _, label_id, _, _ in new_task2labels]
             self.action_history.record({
                 'type': 'edit_task',
                 'task_id': task_id,
@@ -490,9 +495,16 @@ class KanbanBoard(QWidget):
         redo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Y), self)
         redo_shortcut.activated.connect(self.action_history.redo)
     
+    def focus_next_dialog(self, dialog_id):
+        del self.dialogs[dialog_id]
+        if len(self.dialogs) > 0:
+            next_dialog = list(self.dialogs.values())[-1]
+            next_dialog.activateWindow()
+            next_dialog.raise_()
+
     def closeEvent(self, event):
         #self.action_history.save()
-        sio.disconnect()
+        #sio.disconnect()
         event.accept()
 
 
@@ -551,15 +563,11 @@ class TaskDialog(QDialog):
         layout.addRow("Keywords:", label_layout)
 
         self.dialog_button= QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
-        self.dialog_button.accepted.connect(self.push_ok)
-        self.dialog_button.rejected.connect(self.reject)
+        self.dialog_button.accepted.connect(self.handle_accept)
+        self.dialog_button.rejected.connect(self.handle_reject)
         layout.addRow(self.dialog_button)
 
         self.setLayout(layout)
-
-    def push_ok(self):
-        self.add_label()
-        self.accept()
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return:
@@ -576,6 +584,8 @@ class TaskDialog(QDialog):
                     border-radius: 5px;
                 """)
                 return
+            else:
+                self.handle_reject()
         super().keyPressEvent(event)
 
     def open_calendar(self):
@@ -661,7 +671,23 @@ class TaskDialog(QDialog):
 
     def setup_shortcuts(self):
         ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
-        ok_shortcut.activated.connect(self.push_ok)
+        ok_shortcut.activated.connect(self.handle_accept)
+
+    def handle_accept(self):
+        self.add_label()
+        if self.parent() is not None:
+            self.parent().focus_next_dialog(id(self))
+        self.accept()
+
+    def handle_reject(self):
+        if self.parent() is not None:
+            self.parent().focus_next_dialog(id(self))
+        self.reject() 
+
+    def closeEvent(self, event):
+        if self.parent() is not None:
+            self.parent().focus_next_dialog(id(self))
+        event.accept()
 
 class CalendarDialog(QDialog):
     def __init__(self, on_date_selected):
@@ -697,10 +723,10 @@ class CalendarDialog(QDialog):
 class ActionHistory:
     def __init__(self, kanban_board):
         self.kanban_board = kanban_board
-        self.undo_stack = [] 
-        self.redo_stack = [] 
-        self.undo_stack_file = 'undo_stack.pkl'     
-        self.redo_stack_file = 'redo_stack.pkl'     
+        self.undo_stack = []
+        self.redo_stack = []
+        self.undo_stack_file = 'undo_stack.pkl'
+        self.redo_stack_file = 'redo_stack.pkl'
         self.load_undo_stack()
         self.load_redo_stack()
 
@@ -740,7 +766,7 @@ class ActionHistory:
             self.update_task(last_action)
         elif last_action['type'] == 'move_task':
             self.move_task(last_action)
-        self.redo_stack.append(last_action) 
+        self.redo_stack.append(last_action)
 
     def redo(self):
         if not self.redo_stack:
