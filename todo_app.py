@@ -77,7 +77,7 @@ class PopupWindow(QDialog):
         super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        self.parent().parent().open_edit_task_dialog(self.item)
+        self.parent().parent.open_edit_task_dialog(self.item)
         super().mouseDoubleClickEvent(event)
 
 
@@ -114,7 +114,7 @@ class SearchBox(QLineEdit):
         if event.key() == Qt.Key.Key_Escape:
             if self.hasFocus():
                 self.clearFocus()
-        super().keyPressEvent(event) 
+        super().keyPressEvent(event)
 
 
 class KanbanColumn(QListWidget):
@@ -673,7 +673,6 @@ class TaskDialog(QDialog):
         ok_shortcut.activated.connect(self.handle_accept)
 
     def handle_accept(self):
-        print("T: handle_accept")
         self.add_label()
         if self.parent() is not None:
             self.parent().focus_next_dialog(id(self))
