@@ -60,8 +60,8 @@ sio = socketio.Client()
 class SloganWidget(QWidget):
     def __init__(self, position, parent=None):
         super().__init__(parent)
-        self.position = position
-        self.is_pinned = True
+        self.init_position = position
+        self.is_pinned = False
         self.load_assets()
         self.init_ui()
 
@@ -78,7 +78,7 @@ class SloganWidget(QWidget):
 
         self.pin= QLabel(self)
         self.pin.setMaximumHeight(self.height())
-        self.pin.setPixmap(self.pin_red_pixmap)
+        self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
         self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pin.mousePressEvent = self.pin_clicked
 
@@ -93,9 +93,15 @@ class SloganWidget(QWidget):
             if self.editer.hasFocus():
                 self.hide()
 
-    def show_slogan(self):
-        self.move(self.position)
+    def show_slogan(self, position=None):
+        if position is None:
+            position = self.init_position
+        self.move(position)
         self.show()
+
+    def close_slogan(self):
+        self.is_pinned = False
+        self.hide()
 
     def pin_clicked(self, event):
         self.is_pinned = not self.is_pinned
@@ -104,7 +110,7 @@ class SloganWidget(QWidget):
             self.show_slogan()
         else:
             self.pin.setPixmap(self.pin_white_pixmap)
-            self.hide()
+            self.close_slogan()
 
     def enterEvent(self, event):
         if self.isHidden():
@@ -113,7 +119,7 @@ class SloganWidget(QWidget):
     
     def leaveEvent(self, event):
         if not self.is_pinned:
-            self.hide()
+            self.close_slogan()
         super().leaveEvent(event)
 
 class PopupTaskWindow(QDialog):
@@ -146,6 +152,30 @@ class PopupTaskWindow(QDialog):
     def mouseDoubleClickEvent(self, event):
         self.kanban_board.open_edit_task_dialog(self.item)
         super().mouseDoubleClickEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_pos = event.globalPosition().toPoint()  
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.start_pos is not None:
+            new_position = self.pos() + (event.globalPosition().toPoint() - self.start_pos)
+
+            screen = QApplication.primaryScreen()
+            screen_geometry = screen.geometry()
+            new_x = max(screen_geometry.left(), min(new_position.x(), screen_geometry.right() - self.width()))
+            new_y = max(screen_geometry.top(), min(new_position.y(), screen_geometry.bottom() - self.height()))
+
+            self.move(new_x, new_y)  
+            self.slogan.close_slogan()
+            self.start_pos = event.globalPosition().toPoint() 
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.start_pos = None
+        super().mouseReleaseEvent(event)
 
     def enterEvent(self, event):
         if self.slogan.isHidden() and (not self.slogan.is_pinned):
@@ -597,7 +627,8 @@ class KanbanBoard(QWidget):
 
 class TaskDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__()
+        self.parent = parent
         self.newlabels_id = []
         self.selected_label = None
         self.init_ui()
@@ -762,18 +793,18 @@ class TaskDialog(QDialog):
 
     def handle_accept(self):
         self.add_label()
-        if self.parent() is not None:
-            self.parent().focus_next_dialog(id(self))
+        if self.parent is not None:
+            self.parent.focus_next_dialog(id(self))
         self.accept()
 
     def handle_reject(self):
-        if self.parent() is not None:
-            self.parent().focus_next_dialog(id(self))
+        if self.parent is not None:
+            self.parent.focus_next_dialog(id(self))
         self.reject() 
 
     def closeEvent(self, event):
-        if self.parent() is not None:
-            self.parent().focus_next_dialog(id(self))
+        if self.parent is not None:
+            self.parent.focus_next_dialog(id(self))
         event.accept()
 
 
