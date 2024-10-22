@@ -101,6 +101,7 @@ class SloganWidget(QWidget):
 
     def close_slogan(self):
         self.is_pinned = False
+        self.pin.setPixmap(self.pin_white_pixmap)
         self.hide()
 
     def pin_clicked(self, event):
@@ -109,7 +110,6 @@ class SloganWidget(QWidget):
             self.pin.setPixmap(self.pin_red_pixmap)
             self.show_slogan()
         else:
-            self.pin.setPixmap(self.pin_white_pixmap)
             self.close_slogan()
 
     def enterEvent(self, event):
@@ -139,7 +139,6 @@ class PopupTaskWindow(QDialog):
         self.setLayout(layout)
 
         self.slogan = SloganWidget(self.rect().bottomLeft()) 
-        self.slogan.show_slogan()
 
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
 

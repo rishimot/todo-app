@@ -71,6 +71,7 @@ class LancherTaskDialog(TaskDialog):
         self.task_deadline.setText(None)
         self.status_combo.setCurrentText("TODO") 
         self.label_input.clear()
+        self.newlabels_id = []
         while self.label_display_layout.count():
             item = self.label_display_layout.takeAt(0)
             widget = item.widget()
