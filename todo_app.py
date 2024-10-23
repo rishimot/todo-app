@@ -58,10 +58,9 @@ from PyQt6.QtWidgets import (
 sio = socketio.Client()
 
 class SloganWidget(QWidget):
-    def __init__(self, position, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.init_position = position
-        self.is_pinned = False
+        self.is_pinned = True
         self.load_assets()
         self.init_ui()
 
@@ -88,20 +87,14 @@ class SloganWidget(QWidget):
         self.setLayout(layout)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
 
-    def keyPressEvent(self, event: QMouseEvent):
-        if event.key() == Qt.Key.Key_Escape:
-            if self.editer.hasFocus():
-                self.hide()
 
-    def show_slogan(self, position=None):
-        if position is None:
-            position = self.init_position
-        self.move(position)
+    def show_slogan(self):
         self.show()
 
     def close_slogan(self):
-        self.is_pinned = False
-        self.pin.setPixmap(self.pin_white_pixmap)
+        if self.is_pinned:
+            self.is_pinned = False
+            self.pin.setPixmap(self.pin_white_pixmap)
         self.hide()
 
     def pin_clicked(self, event):
@@ -110,6 +103,7 @@ class SloganWidget(QWidget):
             self.pin.setPixmap(self.pin_red_pixmap)
             self.show_slogan()
         else:
+            self.pin.setPixmap(self.pin_white_pixmap)
             self.close_slogan()
 
     def enterEvent(self, event):
@@ -136,15 +130,16 @@ class PopupTaskWindow(QDialog):
         layout = QVBoxLayout()
         label = QLabel(self.text, self)
         layout.addWidget(label)
-        self.setLayout(layout)
 
-        self.slogan = SloganWidget(self.rect().bottomLeft()) 
+        self.slogan = SloganWidget(self) 
+        layout.addWidget(self.slogan)
+        self.setLayout(layout)
 
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
 
+
     def keyPressEvent(self, event: QMouseEvent):
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self.slogan.close()
             self.close()
         super().keyPressEvent(event)
 
@@ -167,7 +162,6 @@ class PopupTaskWindow(QDialog):
             new_y = max(screen_geometry.top(), min(new_position.y(), screen_geometry.bottom() - self.height()))
 
             self.move(new_x, new_y)  
-            self.slogan.close_slogan()
             self.start_pos = event.globalPosition().toPoint() 
         super().mouseMoveEvent(event)
 
