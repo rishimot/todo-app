@@ -19,11 +19,15 @@ from utils import (
     delete_task2label_from_db,
     add_task2label_in_db,
     add_task_to_db,
+    add_time_to_db,
+    enable_focus_mode,
+    disable_focus_mode,
 )
 from PyQt6.QtCore import (
     Qt,
     QSize,
     QUrl,
+    QTimer,
 )
 from PyQt6.QtGui import(
     QColor,
@@ -33,7 +37,6 @@ from PyQt6.QtGui import(
     QMouseEvent,
     QDesktopServices,
     QFont,
-    QCursor,
     QPixmap,
 ) 
 from PyQt6.QtWidgets import (
@@ -54,9 +57,111 @@ from PyQt6.QtWidgets import (
     QCalendarWidget,
     QScrollArea,
     QSizePolicy,
+    QSystemTrayIcon,
+    QMenu,
 )
 
 sio = socketio.Client()
+
+class DigitalTimer(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.task_id = self.parent().item.data(Qt.ItemDataRole.UserRole)
+        self.timer = QTimer()
+        self.setting_time = 30
+        self.time_elapsed = self.setting_time * 60
+        self.button_size = (25, 25)
+        self.start_time = None
+        self.end_time = None
+        self.time_format = "%Y/%m/%d/%H:%M:%S"
+
+        self.load_assets()
+        self.init_ui()
+
+    def init_ui(self):
+        self.layout = QHBoxLayout()
+        self.label = QLabel(f'{self.setting_time}:00', self)
+        font = QFont()
+        font.setPointSize(11) 
+        self.label.setFont(font)
+        self.layout.addWidget(self.label)
+
+        self.start_button = self.createButton(self.saisei_pixmap, self.start_timer)
+        self.end_button = self.createButton(self.teishi_pixmap,  lambda event: self.end_timer())
+        self.layout.addWidget(self.end_button)
+        self.layout.addWidget(self.start_button)
+
+        self.setLayout(self.layout)
+
+        self.timer.timeout.connect(self.update_timer)
+
+        self.tray_icon = QSystemTrayIcon(QIcon("image/gabyou_pinned_plastic_red.png"), self)
+        self.tray_icon.show()
+
+        menu = QMenu()
+        exit_action = menu.addAction("終了")
+        exit_action.triggered.connect(self.close)
+        self.tray_icon.setContextMenu(menu)
+
+    def load_assets(self):
+        saisei_pixmap = QPixmap("image/player_button_blue_saisei.png")
+        teishi_pixmap = QPixmap("image/player_button_blue_teishi.png")
+        ichijiteishi_pixmap = QPixmap("image/player_button_blue_ichijiteishi.png")
+        self.saisei_pixmap = saisei_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.teishi_pixmap = teishi_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.ichijiteishi_pixmap = ichijiteishi_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    def createButton(self, pixmap, callback=None):
+        button = QLabel(self)
+        button.setMaximumSize(*self.button_size)
+        button.setPixmap(pixmap)
+        button.mousePressEvent = callback
+        return button
+
+    def start_timer(self, event):
+        if self.start_time is None:
+            enable_focus_mode()
+            self.start_time = datetime.datetime.now().strftime(self.time_format)
+        self.timer.start(1000) 
+        self.start_button.setPixmap(self.ichijiteishi_pixmap)
+        self.start_button.mousePressEvent = self.pause_timer
+
+    def pause_timer(self, event):
+        disable_focus_mode()
+        self.start_button.setPixmap(self.saisei_pixmap)
+        self.start_button.mousePressEvent = self.start_timer
+        self.timer.stop()
+
+    def update_timer(self):
+        self.time_elapsed -= 1
+        minutes = (self.time_elapsed % 3600) // 60
+        seconds = self.time_elapsed % 60
+        self.label.setText(f'{minutes:02}:{seconds:02}')
+        if self.time_elapsed <= 0:
+            self.end_timer()
+
+    def end_timer(self):
+        if self.start_time:
+            disable_focus_mode()
+            self.start_button.setPixmap(self.saisei_pixmap)
+            self.start_button.mousePressEvent = self.start_timer
+            self.timer.stop()
+            start_time_obj = datetime.datetime.strptime(self.start_time,self.time_format) 
+            end_time = datetime.datetime.now().strftime(self.time_format)
+            end_time_obj = datetime.datetime.strptime(end_time, self.time_format) 
+            duration_time = end_time_obj - start_time_obj
+            if duration_time >= datetime.timedelta(seconds=1):
+                add_time_to_db((self.start_time, end_time, self.task_id))
+                self.tray_icon.showMessage(
+                    "Notification",
+                    f"{duration_time.seconds //60}分{duration_time.seconds%60}秒が経ちました",
+                    self.tray_icon.icon(), 
+                    3000
+                )
+            self.start_time = None
+            self.time_elapsed = self.setting_time * 60
+            self.label.setText(f'{self.setting_time:02}:00')
+ 
 
 class TargetWidget(QLineEdit):
     def __init__(self, parent=None):
@@ -81,6 +186,7 @@ class TargetWidget(QLineEdit):
         if event.key() == Qt.Key.Key_Return and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.clearFocus()
         super().keyPressEvent(event)
+
 
 class PopupTaskWindow(QDialog):
     def __init__(self, text, item, kanban_board=None):
@@ -112,6 +218,9 @@ class PopupTaskWindow(QDialog):
 
         task_name = QLabel(self.text, self)
         task.addWidget(task_name)
+
+        task_timer = DigitalTimer(self)
+        task.addWidget(task_timer)
 
         layout.addLayout(task)
 

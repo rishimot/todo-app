@@ -9,7 +9,7 @@ from ctypes import wintypes
 import win32con
 
 HOTKEY_ID = 1  
-MOD_CTRL_ALT = win32con.MOD_CONTROL # or win32con.MOD_CONTROL | win32con.MOD_ALT
+MOD_CTRL_ALT = win32con.MOD_CONTROL | win32con.MOD_ALT
 VK_SPACE = win32con.VK_SPACE
 
 class MSG(ctypes.Structure):

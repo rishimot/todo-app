@@ -1,6 +1,7 @@
 import sqlite3
 import random
 import requests
+import winreg
 
 def generate_random_color():
     r = random.randint(70, 255)
@@ -51,6 +52,16 @@ def add_task_to_db(task):
     conn.commit()
     conn.close()
     return last_task_id
+
+def add_time_to_db(time_data):
+    start_time, end_time, task_id = time_data
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO time (start_time, end_time, task_id) VALUES (?, ?, ?)", (start_time, end_time, task_id))
+    last_time_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_time_id
 
 def update_task_in_db(task):
     task_id, task_name, task_goal, task_detail, task_deadline, status_id = task
@@ -217,3 +228,17 @@ def delete_task_from_db_by_api(task_id):
     response = requests.delete(f"{SERVER_URL}/api/task/{task_id}")
     if response.status_code == 200:
         return 
+
+def enable_focus_mode():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings", 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 0)
+    except Exception as e:
+        print(f"エラーが発生しました: {e}")
+
+def disable_focus_mode():
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings", 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 1)
+    except Exception as e:
+        print(f"エラーが発生しました: {e}")
