@@ -138,7 +138,7 @@ def get_label2task_from_db(label_name):
     conn.close()
     return status
 
-def add_label_in_db(name, color):
+def add_label_to_db(name, color):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("INSERT INTO label (name, color) VALUES (?, ?)", (name, color))
@@ -146,6 +146,13 @@ def add_label_in_db(name, color):
     conn.commit()
     conn.close()
     return last_task_id
+
+def delete_label_in_db(id):
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute(f"DELETE FROM label WHERE id = {id}")
+    conn.commit()
+    conn.close()
 
 def delete_task2label_from_db(id):
     conn = sqlite3.connect('todo.db')

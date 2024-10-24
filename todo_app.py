@@ -14,7 +14,8 @@ from utils import (
     get_task2label_from_db,
     get_label2task_from_db,
     generate_random_color,
-    add_label_in_db,
+    add_label_to_db,
+    delete_label_in_db,
     delete_task2label_from_db,
     add_task2label_in_db,
     add_task_to_db,
@@ -553,7 +554,7 @@ class KanbanBoard(QWidget):
         old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_status_name = get_task_from_db(task_id)
         old_task2labels_id = get_task2label_from_db(task_id)
         old_task_labels_id = [label_id for _, label_id, _, _ in old_task2labels_id]
-        dialog = TaskDialog(self)
+        dialog = TaskDialog(self, task_id=task_id)
         dialog.task_name.setText(old_task_name)
         dialog.task_goal.setText(old_task_goal)
         dialog.task_detail.setPlainText(old_task_detail)
@@ -615,10 +616,12 @@ class KanbanBoard(QWidget):
         #sio.disconnect()
         event.accept()
 
+
 class TaskDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, task_id=None):
         super().__init__()
         self.parent = parent
+        self.task_id = task_id
         self.newlabels_id = []
         self.selected_label = None
         self.init_ui()
@@ -728,7 +731,7 @@ class TaskDialog(QDialog):
             label_id, label_name, label_color = label
         else:
             label_color = generate_random_color()
-            label_id = add_label_in_db(label_name, label_color)
+            label_id = add_label_to_db(label_name, label_color)
 
         label_widget = QLabel(label_name)
         label_widget.setProperty("label_id", label_id) 
@@ -763,11 +766,27 @@ class TaskDialog(QDialog):
             label_id = label_widget.property("label_id")
             if label_id in self.newlabels_id:
                 self.newlabels_id.remove(label_id)
+                delete_label_in_db(label_id)
             else:
                 task2label_id = label_widget.property("task2label_id")
                 delete_task2label_from_db(task2label_id)
             label_widget.deleteLater() 
             self.selected_label = None
+
+    def update_task(self): 
+        task_id = self.task_id
+        task_name = self.task_name.text()
+        task_goal = self.task_goal.text()
+        task_detail = self.task_detail.toPlainText()
+        task_deadline = self.task_deadline.text()
+        if task_deadline == "":
+            task_deadline = None
+        status_id = self.status_combo.itemData(self.status_combo.currentIndex()) 
+        new_task = (task_id, task_name, task_goal, task_detail, task_deadline, status_id)
+        update_task_in_db(new_task)
+        newlabels_id = self.newlabels_id
+        for label_id in newlabels_id:
+            add_task2label_in_db(task_id=task_id, label_id=label_id)
 
     def make_links_clickable(self):
         import re
@@ -778,6 +797,8 @@ class TaskDialog(QDialog):
             QDesktopServices.openUrl(QUrl(url))  
 
     def setup_shortcuts(self):
+        update_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
+        update_shortcut.activated.connect(self.update_task)
         ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
         ok_shortcut.activated.connect(self.handle_accept)
 
