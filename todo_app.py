@@ -57,9 +57,36 @@ from PyQt6.QtWidgets import (
 
 sio = socketio.Client()
 
-class SloganWidget(QWidget):
+class TargetWidget(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        self.setPlaceholderText("Target is in this time...")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+
+    def enterEvent(self, event):
+        if self.isHidden():
+            self.show()
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        if self.text() == "":
+            self.hide()
+        super().leaveEvent(event)
+
+    def keyPressEvent(self, event: QMouseEvent):
+        if event.key() == Qt.Key.Key_Return and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.clearFocus()
+        super().keyPressEvent(event)
+
+class PopupTaskWindow(QDialog):
+    def __init__(self, text, item, kanban_board=None):
+        super().__init__()
+        self.kanban_board = kanban_board
+        self.text = text
+        self.item = item
         self.is_pinned = True
         self.load_assets()
         self.init_ui()
@@ -71,77 +98,45 @@ class SloganWidget(QWidget):
         self.pin_white_pixmap = pin_white_pixmap.scaled(*(20, 20), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def init_ui(self):
-        self.editer = QLineEdit()
-        self.editer.setPlaceholderText("Target is in this time...")
-        self.editer.returnPressed.connect(self.editer.clearFocus)
-
-        self.pin= QLabel(self)
-        self.pin.setMaximumHeight(self.height())
-        self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
-        self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.pin.mousePressEvent = self.pin_clicked
-
-        layout = QHBoxLayout()
-        layout.addWidget(self.pin)
-        layout.addWidget(self.editer)
-        self.setLayout(layout)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
-
-
-    def show_slogan(self):
-        self.show()
-
-    def close_slogan(self):
-        if self.is_pinned:
-            self.is_pinned = False
-            self.pin.setPixmap(self.pin_white_pixmap)
-        self.hide()
-
-    def pin_clicked(self, event):
-        self.is_pinned = not self.is_pinned
-        if self.is_pinned:
-            self.pin.setPixmap(self.pin_red_pixmap)
-            self.show_slogan()
-        else:
-            self.pin.setPixmap(self.pin_white_pixmap)
-            self.close_slogan()
-
-    def enterEvent(self, event):
-        if self.isHidden():
-            self.show_slogan()
-        super().enterEvent(event)
-    
-    def leaveEvent(self, event):
-        if not self.is_pinned:
-            self.close_slogan()
-        super().leaveEvent(event)
-
-class PopupTaskWindow(QDialog):
-    def __init__(self, text, item, kanban_board=None):
-        super().__init__()
-        self.kanban_board = kanban_board
-        self.text = text
-        self.item = item
-        self.init_ui()
-
-    def init_ui(self):
         self.setGeometry(0, 0, 200, 50)
 
         layout = QVBoxLayout()
-        label = QLabel(self.text, self)
-        layout.addWidget(label)
+        task = QHBoxLayout()
+        self.pin= QLabel(self)
+        self.pin.setFixedSize(30, 30)
+        self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
+        self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pin.mousePressEvent = self.pin_clicked
+        task.addWidget(self.pin)
 
-        self.slogan = SloganWidget(self) 
-        layout.addWidget(self.slogan)
+        task_name = QLabel(self.text, self)
+        task.addWidget(task_name)
+
+        layout.addLayout(task)
+
+        self.target = TargetWidget(self) 
+        layout.addWidget(self.target)
         self.setLayout(layout)
 
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.FramelessWindowHint)
-
+        window_flags = self.windowFlags() | Qt.WindowType.FramelessWindowHint
+        if self.is_pinned:
+            window_flags |= Qt.WindowType.WindowStaysOnTopHint 
+        self.setWindowFlags(window_flags)
 
     def keyPressEvent(self, event: QMouseEvent):
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.close()
         super().keyPressEvent(event)
+
+    def pin_clicked(self, event):
+        self.is_pinned = not self.is_pinned
+        if self.is_pinned:
+            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+            self.pin.setPixmap(self.pin_red_pixmap)
+        else:
+            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
+            self.pin.setPixmap(self.pin_white_pixmap)
+        self.show()
 
     def mouseDoubleClickEvent(self, event):
         self.kanban_board.open_edit_task_dialog(self.item)
@@ -171,13 +166,13 @@ class PopupTaskWindow(QDialog):
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event):
-        if self.slogan.isHidden() and (not self.slogan.is_pinned):
-            self.slogan.show_slogan()
+        if self.target.isHidden():
+            self.target.show()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if not self.slogan.is_pinned:
-            self.slogan.hide()
+        if self.target.text() == "":
+            self.target.hide()
         super().leaveEvent(event)
 
 
