@@ -124,6 +124,8 @@ class PopupTaskWindow(QDialog):
         self.setWindowFlags(window_flags)
 
     def keyPressEvent(self, event: QMouseEvent):
+        if event.key() == Qt.Key.Key_Escape:
+            return
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.close()
         super().keyPressEvent(event)
