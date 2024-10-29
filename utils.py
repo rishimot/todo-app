@@ -2,6 +2,9 @@ import sqlite3
 import random
 import requests
 import winreg
+import datetime
+import jpholiday
+import numpy as np
 
 def generate_random_color():
     r = random.randint(70, 255)
@@ -242,3 +245,11 @@ def disable_focus_mode():
             winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 1)
     except Exception as e:
         print(f"エラーが発生しました: {e}")
+
+def count_weekdays(start_date, end_date):
+    weekdays = []
+    for i in range((end_date - start_date).days + 1):
+        date = start_date + datetime.timedelta(days=i)
+        if (date.weekday() < 5) and (not jpholiday.is_holiday(date)):
+            weekdays.append(date)
+    return len(weekdays)
