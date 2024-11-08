@@ -57,7 +57,7 @@ def add_task_to_db(task):
     return last_task_id
 
 def add_time_to_db(time_data):
-    start_time, end_time, task_id = time_data
+    start_time, end_time, duration, task_id = time_data
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("INSERT INTO time (start_time, end_time, task_id) VALUES (?, ?, ?)", (start_time, end_time, task_id))
@@ -250,6 +250,6 @@ def count_weekdays(start_date, end_date):
     weekdays = []
     for i in range((end_date - start_date).days + 1):
         date = start_date + datetime.timedelta(days=i)
-        if (date.weekday() < 5) and (not jpholiday.is_holiday(date)):
+        if (date.weekday() <= 5) and (not jpholiday.is_holiday(date)):
             weekdays.append(date)
     return len(weekdays)

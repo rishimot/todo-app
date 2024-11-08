@@ -22,6 +22,7 @@ from utils import (
     add_time_to_db,
     enable_focus_mode,
     disable_focus_mode,
+    count_weekdays,
 )
 from PyQt6.QtCore import (
     Qt,
@@ -38,6 +39,7 @@ from PyQt6.QtGui import(
     QDesktopServices,
     QFont,
     QPixmap,
+    QCursor,
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -61,6 +63,10 @@ from PyQt6.QtWidgets import (
     QMenu,
 )
 
+label_points = {
+    "important": 5,
+}
+
 sio = socketio.Client()
 
 class DigitalTimer(QWidget):
@@ -69,6 +75,7 @@ class DigitalTimer(QWidget):
         self.task_id = self.parent().item.data(Qt.ItemDataRole.UserRole)
         self.timer = QTimer()
         self.setting_time = 30
+        self.duration_time = 0 
         self.time_elapsed = self.setting_time * 60
         self.button_size = (25, 25)
         self.start_time = None
@@ -79,29 +86,24 @@ class DigitalTimer(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.layout = QHBoxLayout()
+        layout = QVBoxLayout()
         self.label = QLabel(f'{self.setting_time}:00', self)
-        font = QFont()
-        font.setPointSize(11) 
-        self.label.setFont(font)
-        self.layout.addWidget(self.label)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.mousePressEvent = lambda event: self.start_timer()
+        layout.addWidget(self.label)
 
-        self.start_button = self.createButton(self.saisei_pixmap, self.start_timer)
-        self.end_button = self.createButton(self.teishi_pixmap,  lambda event: self.end_timer())
-        self.layout.addWidget(self.end_button)
-        self.layout.addWidget(self.start_button)
-
-        self.setLayout(self.layout)
+        self.start_button = self.createButton(self.saisei_pixmap, lambda event: self.start_timer())
+        layout.addWidget(self.start_button)
+        self.setLayout(layout)
 
         self.timer.timeout.connect(self.update_timer)
-
-        self.tray_icon = QSystemTrayIcon(QIcon("image/gabyou_pinned_plastic_red.png"), self)
-        self.tray_icon.show()
 
         menu = QMenu()
         exit_action = menu.addAction("終了")
         exit_action.triggered.connect(self.close)
+        self.tray_icon = QSystemTrayIcon(QIcon("icon/dokuro_switch.ico"), self)
         self.tray_icon.setContextMenu(menu)
+        self.tray_icon.show()
 
     def load_assets(self):
         saisei_pixmap = QPixmap("image/player_button_blue_saisei.png")
@@ -118,50 +120,58 @@ class DigitalTimer(QWidget):
         button.mousePressEvent = callback
         return button
 
-    def start_timer(self, event):
+    def start_timer(self):
         if self.start_time is None:
             enable_focus_mode()
             self.start_time = datetime.datetime.now().strftime(self.time_format)
         self.timer.start(1000) 
-        self.start_button.setPixmap(self.ichijiteishi_pixmap)
-        self.start_button.mousePressEvent = self.pause_timer
+        self.start_button.setPixmap(self.teishi_pixmap)
+        self.start_button.mousePressEvent = lambda event: self.stop_timer()
+        self.label.mousePressEvent = lambda event: self.pause_timer()
 
-    def pause_timer(self, event):
+    def pause_timer(self):
         disable_focus_mode()
         self.start_button.setPixmap(self.saisei_pixmap)
-        self.start_button.mousePressEvent = self.start_timer
+        self.start_button.mousePressEvent = lambda event: self.start_timer()
+        self.label.mousePressEvent = lambda event: self.start_timer()
         self.timer.stop()
 
     def update_timer(self):
+        self.duration_time += 1 
         self.time_elapsed -= 1
         minutes = (self.time_elapsed % 3600) // 60
         seconds = self.time_elapsed % 60
         self.label.setText(f'{minutes:02}:{seconds:02}')
         if self.time_elapsed <= 0:
-            self.end_timer()
+            self.stop_timer()
 
-    def end_timer(self):
-        if self.start_time:
-            disable_focus_mode()
-            self.start_button.setPixmap(self.saisei_pixmap)
-            self.start_button.mousePressEvent = self.start_timer
-            self.timer.stop()
-            start_time_obj = datetime.datetime.strptime(self.start_time,self.time_format) 
+    def stop_timer(self):
+        disable_focus_mode()
+        self.start_button.setPixmap(self.saisei_pixmap)
+        self.start_button.mousePressEvent = lambda event: self.start_timer()
+        self.timer.stop()
+        if self.duration_time >= 1:
             end_time = datetime.datetime.now().strftime(self.time_format)
-            end_time_obj = datetime.datetime.strptime(end_time, self.time_format) 
-            duration_time = end_time_obj - start_time_obj
-            if duration_time >= datetime.timedelta(seconds=1):
-                add_time_to_db((self.start_time, end_time, self.task_id))
-                self.tray_icon.showMessage(
-                    "Notification",
-                    f"{duration_time.seconds //60}分{duration_time.seconds%60}秒が経ちました",
-                    self.tray_icon.icon(), 
-                    3000
-                )
-            self.start_time = None
+            add_time_to_db((self.start_time, end_time, self.duration_time, self.task_id))
+            self.tray_icon.showMessage(
+                "Notification",
+                f"{self.duration_time // 60}分{self.duration_time % 60}秒が経ちました",
+                QIcon("image/gabyou_pinned_plastic_red.png"),
+                1000
+            )
+            self.duration_time = 0
             self.time_elapsed = self.setting_time * 60
             self.label.setText(f'{self.setting_time:02}:00')
- 
+
+    def minitimer_on(self):
+        self.start_button.hide()
+        self.setFixedHeight(30)
+        self.adjustSize()
+
+    def minitimer_off(self):
+        self.start_button.show()
+        self.setFixedHeight(60)
+        self.adjustSize()
 
 class TargetWidget(QLineEdit):
     def __init__(self, parent=None):
@@ -171,83 +181,96 @@ class TargetWidget(QLineEdit):
     def init_ui(self):
         self.setPlaceholderText("Target is in this time...")
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
-
-    def enterEvent(self, event):
-        if self.isHidden():
-            self.show()
-        super().enterEvent(event)
-    
-    def leaveEvent(self, event):
-        if self.text() == "":
-            self.hide()
-        super().leaveEvent(event)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   
 
     def keyPressEvent(self, event: QMouseEvent):
         if event.key() == Qt.Key.Key_Return and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.clearFocus()
         super().keyPressEvent(event)
 
+    def focusInEvent(self, event):
+        print("TargetWindow: foucsInEvent")
 
 class PopupTaskWindow(QDialog):
     def __init__(self, text, item, kanban_board=None):
         super().__init__()
+        self.setWindowIcon(QIcon("icon/dokuro_switch.ico"))
         self.kanban_board = kanban_board
-        self.text = text
+        self.text = text[text.find("#") + 1:].strip().split(' ', 1)[1]
+        self.start_pos = None
         self.item = item
         self.is_pinned = True
+        self.pin_only = False
+        self.pin_size = (15, 15)
+        self.pinwidget_size = (37, 37)
         self.load_assets()
         self.init_ui()
 
     def load_assets(self):
         pin_red_pixmap = QPixmap("image/gabyou_pinned_plastic_red.png")
         pin_white_pixmap = QPixmap("image/gabyou_pinned_plastic_white.png")
-        self.pin_red_pixmap = pin_red_pixmap.scaled(*(20, 20), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-        self.pin_white_pixmap = pin_white_pixmap.scaled(*(20, 20), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.pin_red_pixmap = pin_red_pixmap.scaled(*self.pin_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.pin_white_pixmap = pin_white_pixmap.scaled(*self.pin_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 50)
 
-        layout = QVBoxLayout()
-        task = QHBoxLayout()
-        self.pin= QLabel(self)
-        self.pin.setFixedSize(30, 30)
+        layout = QHBoxLayout()
+        self.pin = QLabel(self)
         self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
+        self.pin.setFixedSize(*self.pin_size)
         self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pin.mousePressEvent = self.pin_clicked
-        task.addWidget(self.pin)
+        layout.addWidget(self.pin)
 
-        task_name = QLabel(self.text, self)
-        task.addWidget(task_name)
-
-        task_timer = DigitalTimer(self)
-        task.addWidget(task_timer)
-
-        layout.addLayout(task)
+        main_layout = QHBoxLayout()
+        self.task_layout = QVBoxLayout()
+        self.task_name = QLabel(self.text, self)
+        self.task_layout.addWidget(self.task_name)
 
         self.target = TargetWidget(self) 
-        layout.addWidget(self.target)
+        self.task_layout.addWidget(self.target)
+        main_layout.addLayout(self.task_layout)
+
+        timer_layout = QVBoxLayout()
+        self.task_timer = DigitalTimer(self)
+        timer_layout.addWidget(self.task_timer)
+        main_layout.addLayout(timer_layout)
+
+        self.main_widget = QWidget()
+        self.main_widget.setLayout(main_layout)
+        layout.addWidget(self.main_widget)
         self.setLayout(layout)
+        self.adjustSize()
 
         window_flags = self.windowFlags() | Qt.WindowType.FramelessWindowHint
         if self.is_pinned:
             window_flags |= Qt.WindowType.WindowStaysOnTopHint 
         self.setWindowFlags(window_flags)
+        
+        self.original_size = (self.width(), self.height())
+        self.small_mode()
 
     def keyPressEvent(self, event: QMouseEvent):
         if event.key() == Qt.Key.Key_Escape:
             return
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.close()
+        if event.key() == Qt.Key.Key_Return and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            parent_rect = self.geometry()
+            mouse_pos = QCursor.pos()
+            if not parent_rect.contains(mouse_pos):
+                self.small_mode()
         super().keyPressEvent(event)
 
     def pin_clicked(self, event):
         self.is_pinned = not self.is_pinned
         if self.is_pinned:
-            self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
             self.pin.setPixmap(self.pin_red_pixmap)
+            self.unlock_pinonly_mode()
         else:
-            self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowStaysOnTopHint)
             self.pin.setPixmap(self.pin_white_pixmap)
+
         self.show()
 
     def mouseDoubleClickEvent(self, event):
@@ -278,15 +301,46 @@ class PopupTaskWindow(QDialog):
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event):
-        if self.target.isHidden():
-            self.target.show()
+        if self.is_pinned:
+            self.enlarge_mode()
+        else:
+            self.pinonly_mode()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if self.target.text() == "":
-            self.target.hide()
+        if (not self.target.hasFocus()) and (not self.pin_only):
+            self.small_mode()
         super().leaveEvent(event)
 
+    def enlarge_mode(self):
+        self.main_widget.show() 
+        self.task_name.setText(self.text)
+        self.target.show()
+        self.task_timer.minitimer_off()
+        self.setFixedHeight(self.original_size[1])
+        self.adjustSize()
+
+    def small_mode(self):
+        if self.target.text() != "":
+            self.task_name.setText(self.target.text())
+        self.target.hide()
+        self.task_timer.minitimer_on()
+        self.setFixedHeight(50)
+        self.adjustSize()
+
+    def pinonly_mode(self):
+        self.pin_only = True
+        self.main_widget.hide() 
+        self.setFixedSize(*self.pinwidget_size)
+        self.adjustSize()
+        QTimer.singleShot(3000, self.unlock_pinonly_mode) 
+
+    def unlock_pinonly_mode(self):
+        self.pin_only = False
+        self.main_widget.show() 
+        self.setFixedSize(*self.original_size)
+        self.adjustSize()
+        self.small_mode()
 
 class SearchBox(QLineEdit):
     def __init__(self, parent=None):
@@ -329,13 +383,11 @@ class SearchBox(QLineEdit):
                 self.clearFocus()
         super().keyPressEvent(event)
 
-
 class KanbanColumn(QListWidget):
     def __init__(self, title, parent=None):
         super().__init__()
         self.parent = parent
         self.id, self.name = get_status_by_name_from_db(title)
-        self.popup_window = None
         self.init_ui()
 
     def init_ui(self):
@@ -447,12 +499,8 @@ class KanbanColumn(QListWidget):
         selected_items = self.selectedItems()
         if selected_items:
             item_text = selected_items[0].text()
-            if self.popup_window is None or not self.popup_window.isVisible():
-                self.popup_window = PopupTaskWindow(item_text, selected_items[0], self.parent)
-                self.popup_window.show()
-            else:
-                self.popup_window.close()
-                self.popup_window = None
+            popup_window = PopupTaskWindow(item_text, selected_items[0], self.parent)
+            popup_window.show()
             self.clearFocus()
 
 
@@ -526,11 +574,12 @@ class KanbanBoard(QWidget):
         if task_deadline:
             deadline_date = datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(hours=17, minutes=45)
             now = datetime.datetime.now() 
-            if deadline_date - now < datetime.timedelta(days=0):
+            weekdays_diff = count_weekdays(now, deadline_date)
+            if weekdays_diff <= 0:
                 color = QColor(0, 0, 0)
-            elif deadline_date - now < datetime.timedelta(days=1):
+            elif weekdays_diff <= 1:
                 color = QColor(255, 0, 0)
-            elif deadline_date - now < datetime.timedelta(days=7):
+            elif weekdays_diff <= 7:
                 color = QColor(255, 150, 0)
             else:
                 color = QColor(0, 0, 255)
@@ -539,36 +588,24 @@ class KanbanBoard(QWidget):
         return color
 
     def calc_priority(self, task_id):
+        priority = 0
         _, _, _, task_deadline, _ = get_task_from_db(task_id)
-        priority = 1
         if task_deadline:
             deadline_date = datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(hours=17, minutes=45)
             now = datetime.datetime.now() 
-            if deadline_date - now < datetime.timedelta(days=0):
-                priority = float('inf')
-            elif deadline_date - now < datetime.timedelta(days=1):
-                priority = 1000
-            elif deadline_date - now < datetime.timedelta(days=7):
-                priority = 100
-            else:
-                priority = 10
+            weekdays_diff = count_weekdays(now, deadline_date)
+            if weekdays_diff <= 0:
+                priority += float('inf')
+            elif weekdays_diff <= 1:
+                priority += 100
+            elif weekdays_diff <= 7:
+                priority += 10
         labels = get_task2label_from_db(task_id)
         if labels:
             importance = 1 
             for _, _, label_name, _ in labels:
-                if label_name == "priority_high":
-                    importance *= 5
-                elif label_name == "priority_low":
-                    importance *= 1
-                else:
-                    importance *= 3
-
-                if label_name == "emergency":
-                    importance *= 5
-                elif label_name == "tivial":
-                    importance *= 1
-                else:
-                    importance *= 3
+                if label_name in label_points:
+                    importance += label_points[label_name]
             priority += importance
         self.tasks_priority[task_id] = priority
         return priority
