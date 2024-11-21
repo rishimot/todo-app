@@ -46,11 +46,12 @@ class LancherTaskDialog(TaskDialog):
         task_goal = self.task_goal.text()
         task_detail = self.task_detail.toPlainText()
         task_deadline = self.task_deadline.text()
-        if task_deadline == "":
-            task_deadline = None
+        task_deadline = None if task_deadline == "" else task_deadline
+        is_weekly_task = self.is_weekly_task.isChecked()
+        status_id = self.status_combo.itemData(self.status_combo.currentIndex())
+        waiting_task = self.waiting_input.text()
+        task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
         labels_id = self.newlabels_id
-        status_id = self.status_combo.itemData(self.status_combo.currentIndex()) 
-        task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, status_id))
         for label_id in labels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
         self.clear_input()

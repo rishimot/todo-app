@@ -4,7 +4,6 @@ import requests
 import winreg
 import datetime
 import jpholiday
-import numpy as np
 
 def generate_random_color():
     r = random.randint(70, 255)
@@ -16,7 +15,7 @@ def get_task_from_db(task_id):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task.name, task.goal, task.detail, task.deadline, status.name 
+        SELECT task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task
         FROM task 
         INNER JOIN status ON task.status_id = status.id
         WHERE task.id = ?
@@ -30,7 +29,7 @@ def get_alltask_from_db():
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task.id, task.name, task.goal, task.detail, task.deadline, status.name 
+        SELECT task.id, task.name, task.goal, task.detail, task.deadline, is_weekly_task, status.name, waiting_task
         FROM task 
         INNER JOIN status ON task.status_id = status.id
     """)
@@ -47,10 +46,10 @@ def get_alltask_to_api():
     return response
 
 def add_task_to_db(task):
-    task_name, task_goal, task_detail, task_deadline, status_id = task
+    task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO task (name, goal, detail, deadline, status_id) VALUES (?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline, status_id))
+    cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task) VALUES (?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
     last_task_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -67,14 +66,14 @@ def add_time_to_db(time_data):
     return last_time_id
 
 def update_task_in_db(task):
-    task_id, task_name, task_goal, task_detail, task_deadline, status_id = task
+    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE task 
-        SET name = ?, goal = ?, detail = ?, deadline = ?, status_id = ? 
+        SET name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ?
         WHERE id = ?
-    """, (task_name, task_goal, task_detail, task_deadline, status_id, task_id))
+    """, (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, task_id))
     conn.commit()
     conn.close()
 
@@ -129,7 +128,7 @@ def get_task2label_from_db(task_id):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task2label.id, label.id, label.name, label.color
+        SELECT task2label.id, label.id, label.name, label.color, label.point
         FROM task2label
         INNER JOIN label ON task2label.label_id = label.id
         WHERE task2label.task_id = ?
@@ -152,10 +151,10 @@ def get_label2task_from_db(label_name):
     conn.close()
     return status
 
-def add_label_to_db(name, color):
+def add_label_to_db(name, color, point=0):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO label (name, color) VALUES (?, ?)", (name, color))
+    cursor.execute("INSERT INTO label (name, color, point) VALUES (?, ?, ?)", (name, color, point))
     last_task_id = cursor.lastrowid
     conn.commit()
     conn.close()

@@ -37,7 +37,6 @@ from PyQt6.QtGui import(
     QShortcut,
     QMouseEvent,
     QDesktopServices,
-    QFont,
     QPixmap,
     QCursor,
 ) 
@@ -61,11 +60,8 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSystemTrayIcon,
     QMenu,
+    QCheckBox,
 )
-
-label_points = {
-    "important": 5,
-}
 
 sio = socketio.Client()
 
@@ -89,6 +85,7 @@ class DigitalTimer(QWidget):
         layout = QVBoxLayout()
         self.label = QLabel(f'{self.setting_time}:00', self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setFixedHeight(30)
         self.label.mousePressEvent = lambda event: self.start_timer()
         layout.addWidget(self.label)
 
@@ -163,16 +160,6 @@ class DigitalTimer(QWidget):
             self.time_elapsed = self.setting_time * 60
             self.label.setText(f'{self.setting_time:02}:00')
 
-    def minitimer_on(self):
-        self.start_button.hide()
-        self.setFixedHeight(30)
-        self.adjustSize()
-
-    def minitimer_off(self):
-        self.start_button.show()
-        self.setFixedHeight(60)
-        self.adjustSize()
-
 class TargetWidget(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -188,13 +175,11 @@ class TargetWidget(QLineEdit):
             self.clearFocus()
         super().keyPressEvent(event)
 
-    def focusInEvent(self, event):
-        print("TargetWindow: foucsInEvent")
-
 class PopupTaskWindow(QDialog):
     def __init__(self, text, item, kanban_board=None):
         super().__init__()
         self.setWindowIcon(QIcon("icon/dokuro_switch.ico"))
+        self.setWindowTitle("Popup Task Window")
         self.kanban_board = kanban_board
         self.text = text[text.find("#") + 1:].strip().split(' ', 1)[1]
         self.start_pos = None
@@ -213,7 +198,7 @@ class PopupTaskWindow(QDialog):
         self.pin_white_pixmap = pin_white_pixmap.scaled(*self.pin_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def init_ui(self):
-        self.setGeometry(0, 0, 200, 50)
+        self.setGeometry(0, 0, 200, 40)
 
         layout = QHBoxLayout()
         self.pin = QLabel(self)
@@ -224,6 +209,8 @@ class PopupTaskWindow(QDialog):
         layout.addWidget(self.pin)
 
         main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         self.task_layout = QVBoxLayout()
         self.task_name = QLabel(self.text, self)
         self.task_layout.addWidget(self.task_name)
@@ -241,13 +228,13 @@ class PopupTaskWindow(QDialog):
         self.main_widget.setLayout(main_layout)
         layout.addWidget(self.main_widget)
         self.setLayout(layout)
-        self.adjustSize()
 
         window_flags = self.windowFlags() | Qt.WindowType.FramelessWindowHint
         if self.is_pinned:
             window_flags |= Qt.WindowType.WindowStaysOnTopHint 
         self.setWindowFlags(window_flags)
-        
+
+        self.adjustSize()
         self.original_size = (self.width(), self.height())
         self.small_mode()
 
@@ -316,7 +303,7 @@ class PopupTaskWindow(QDialog):
         self.main_widget.show() 
         self.task_name.setText(self.text)
         self.target.show()
-        self.task_timer.minitimer_off()
+        self.task_timer.show()
         self.setFixedHeight(self.original_size[1])
         self.adjustSize()
 
@@ -324,8 +311,8 @@ class PopupTaskWindow(QDialog):
         if self.target.text() != "":
             self.task_name.setText(self.target.text())
         self.target.hide()
-        self.task_timer.minitimer_on()
-        self.setFixedHeight(50)
+        self.task_timer.hide()
+        self.setFixedHeight(35)
         self.adjustSize()
 
     def pinonly_mode(self):
@@ -437,9 +424,23 @@ class KanbanColumn(QListWidget):
             self.insertItem(drop_row, item)
 
             task_id = item.data(Qt.ItemDataRole.UserRole) 
-            task_name, task_goal, task_detail, task_deadline, _ = get_task_from_db(task_id)
-            task = (task_id, task_name, task_goal, task_detail, task_deadline, self.id)
+            task_name, task_goal, task_detail, task_deadline, is_weekly_task, _, waiting_task = get_task_from_db(task_id)
+            task = (task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, self.id, waiting_task)
             update_task_in_db(task)
+            if self.name == "DONE":
+                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                label = get_label_by_name_from_db(complete_date)
+                if label:
+                    label_id, _, _, _ = label
+                else:
+                    label_color = generate_random_color()
+                    label_id = add_label_to_db(complete_date, label_color)
+                add_task2label_in_db(task_id=task_id, label_id=label_id)
+            elif event.source().name == "DONE":
+                task2labels = get_task2label_from_db(task_id)
+                for task2label_id, _, label_name, _, _ in task2labels:
+                    if label_name.startswith("Done:"):
+                        delete_task2label_from_db(task2label_id)
 
             self.parent.action_history.record({
                 'type': 'move_task',
@@ -474,16 +475,16 @@ class KanbanColumn(QListWidget):
             for selected_item in selected_items:
                 task_id = selected_item.data(Qt.ItemDataRole.UserRole) 
                 column = selected_item.listWidget()
-                deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, _ = get_task_from_db(task_id)
+                deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, deleted_is_weekly_task, _, deleted_waiting_task = get_task_from_db(task_id)
                 column.takeItem(column.row(selected_item))  
                 task2labels = get_task2label_from_db(task_id)
-                deleted_labels_id = [ labels_id for _, labels_id, _, _ in task2labels]
+                deleted_labels_id = [ labels_id for _, labels_id, _, _, _ in task2labels]
                 deleted_task2labels_id = get_task2label_from_db(task_id)
                 delete_task_from_db(task_id)
                 self.parent.action_history.record({
                     'type': 'delete_task',
                     'task_id': task_id,
-                    'task_data': (deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, column.id),
+                    'task_data': (deleted_task_name, deleted_task_goal, deleted_task_detail, deleted_task_deadline, deleted_is_weekly_task, column.id, deleted_waiting_task),
                     'task2labels_id': deleted_task2labels_id,
                     'labels_id': deleted_labels_id,
                     'source_column': column,
@@ -502,7 +503,6 @@ class KanbanColumn(QListWidget):
             popup_window = PopupTaskWindow(item_text, selected_items[0], self.parent)
             popup_window.show()
             self.clearFocus()
-
 
 class KanbanBoard(QWidget):
     def __init__(self):
@@ -565,7 +565,16 @@ class KanbanBoard(QWidget):
         tasks = get_alltask_from_db()
         items = {}
         for task in tasks:
-            task_id, _, _, _, _, _ = task
+            task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_name, waiting_task = task
+            if status_name == "DONE" and is_weekly_task:
+                new_deadline = (datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d") if task_deadline else None
+                new_status_id = self.columns["TODO"].id
+                task = (task_id, task_name, task_goal, task_detail, new_deadline, is_weekly_task, new_status_id, waiting_task)
+                update_task_in_db(task)
+                task2labels = get_task2label_from_db(task_id)
+                for task2label_id, _, label_name, _, _ in task2labels:
+                    if label_name.startswith("Done:"):
+                        delete_task2label_from_db(task2label_id)
             item = self.create_item(task)
             items[task_id] = item
         self.add_items_in_column_in_order_of_priority(items)
@@ -579,7 +588,7 @@ class KanbanBoard(QWidget):
                 color = QColor(0, 0, 0)
             elif weekdays_diff <= 1:
                 color = QColor(255, 0, 0)
-            elif weekdays_diff <= 7:
+            elif weekdays_diff <= 3:
                 color = QColor(255, 150, 0)
             else:
                 color = QColor(0, 0, 255)
@@ -589,7 +598,7 @@ class KanbanBoard(QWidget):
 
     def calc_priority(self, task_id):
         priority = 0
-        _, _, _, task_deadline, _ = get_task_from_db(task_id)
+        _, _, _, task_deadline, _, _, _ = get_task_from_db(task_id)
         if task_deadline:
             deadline_date = datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(hours=17, minutes=45)
             now = datetime.datetime.now() 
@@ -598,20 +607,17 @@ class KanbanBoard(QWidget):
                 priority += float('inf')
             elif weekdays_diff <= 1:
                 priority += 100
-            elif weekdays_diff <= 7:
+            elif weekdays_diff <= 3:
                 priority += 10
         labels = get_task2label_from_db(task_id)
         if labels:
-            importance = 1 
-            for _, _, label_name, _ in labels:
-                if label_name in label_points:
-                    importance += label_points[label_name]
-            priority += importance
+            for _, _, _, _, label_point in labels:
+                priority += label_point
         self.tasks_priority[task_id] = priority
         return priority
 
     def create_item(self, task):
-        task_id, task_name, _, _, task_deadline, _ = task
+        task_id, task_name, _, _, task_deadline, _, _, _ = task
         item = QListWidgetItem(f"#{task_id} {task_name}")
         color = self.get_color(task_deadline)
         item.setForeground(color)
@@ -621,7 +627,7 @@ class KanbanBoard(QWidget):
         return item
 
     def update_item(self, item, task):
-        task_id, task_name, _, _, task_deadline, _ = task
+        task_id, task_name, _, _, task_deadline, _, _, _ = task
         item.setText(f"#{task_id} {task_name}")
         color = self.get_color(task_deadline)
         item.setForeground(color)
@@ -640,7 +646,7 @@ class KanbanBoard(QWidget):
 
     def add_item_in_column(self, item):
         task_id = item.data(Qt.ItemDataRole.UserRole) 
-        _, _, _, _, status_name = get_task_from_db(task_id)
+        _, _, _, _, _, status_name, _ = get_task_from_db(task_id)
         column = self.columns[status_name]
         column.addItem(item)
         return column
@@ -662,6 +668,7 @@ class KanbanBoard(QWidget):
                     column.takeItem(column.row(item))
                     column.insertItem(column.row(source_item), item)
                     break
+        return column
 
     def open_add_task_dialog(self, column):
         dialog = TaskDialog(self)
@@ -674,13 +681,24 @@ class KanbanBoard(QWidget):
             task_detail = dialog.task_detail.toPlainText()
             task_deadline = dialog.task_deadline.text()
             task_deadline = None if task_deadline == "" else task_deadline
+            is_weekly_task = dialog.is_weekly_task.isChecked()
             status_id = dialog.status_combo.itemData(dialog.status_combo.currentIndex())
+            waiting_task = dialog.waiting_input.text()
+            task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
             labels_id = dialog.newlabels_id
-            task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, status_id))
+            if status_id == self.columns["DONE"].id:
+                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                label = get_label_by_name_from_db(complete_date)
+                if label:
+                    label_id, _, _, _ = label
+                else:
+                    label_color = generate_random_color()
+                    label_id = add_label_to_db(complete_date, label_color)
+                labels_id.append(label_id)
             for label_id in labels_id:
                 add_task2label_in_db(task_id=task_id, label_id=label_id)
             task2labels_id = get_task2label_from_db(task_id)
-            task_data = (task_name, task_goal, task_detail, task_deadline, status_id)
+            task_data = (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task)
             item = self.create_item((task_id, *task_data))
             added_column = self.add_item_in_column(item)
             self.insert_item_in_column(item)
@@ -696,16 +714,19 @@ class KanbanBoard(QWidget):
     def open_edit_task_dialog(self, item):
         column = item.listWidget()
         task_id = item.data(Qt.ItemDataRole.UserRole) 
-        status_id = column.id
-        old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_status_name = get_task_from_db(task_id)
+        old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_is_weekly_task, old_status_name, old_waiting_task = get_task_from_db(task_id)
+        old_status_id = column.id
+        old_task_data = (old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_is_weekly_task, old_status_id, old_waiting_task)
         old_task2labels_id = get_task2label_from_db(task_id)
-        old_task_labels_id = [label_id for _, label_id, _, _ in old_task2labels_id]
+        old_task_labels_id = [label_id for _, label_id, _, _, _ in old_task2labels_id]
         dialog = TaskDialog(self, task_id=task_id)
         dialog.task_name.setText(old_task_name)
         dialog.task_goal.setText(old_task_goal)
         dialog.task_detail.setPlainText(old_task_detail)
         dialog.task_deadline.setText(old_task_deadline)
+        dialog.is_weekly_task.setChecked(bool(old_is_weekly_task))
         dialog.status_combo.setCurrentText(old_status_name) 
+        dialog.waiting_input.setText(old_waiting_task)
         dialog.display_labels(old_task2labels_id)
         dialog.show()
         self.dialogs[id(dialog)] = dialog
@@ -714,24 +735,39 @@ class KanbanBoard(QWidget):
             new_task_goal = dialog.task_goal.text()
             new_task_detail = dialog.task_detail.toPlainText()
             new_task_deadline = dialog.task_deadline.text() 
+            new_is_weekly_task = 1 if dialog.is_weekly_task.isChecked() else 0
             new_task_deadline = None if new_task_deadline == "" else new_task_deadline
             new_status_id = dialog.status_combo.itemData(dialog.status_combo.currentIndex()) 
-            new_task = (task_id, new_task_name, new_task_goal, new_task_detail, new_task_deadline, new_status_id)
-            update_task_in_db(new_task)
-            for label_id in dialog.newlabels_id:
-                add_task2label_in_db(task_id=task_id, label_id=label_id)
-            self.update_item(item, new_task)
-            self.insert_item_in_column(item)
-            new_task2labels = get_task2label_from_db(task_id)
-            new_task2labels_id = [task2label_id for task2label_id, _, _, _ in new_task2labels]
-            new_task_labels_id = [label_id  for _, label_id, _, _ in new_task2labels]
+            new_waiting_task = dialog.waiting_input.text()
+            new_task_data = (new_task_name, new_task_goal, new_task_detail, new_task_deadline, new_is_weekly_task, new_status_id, new_waiting_task)
+            new_labels_id = dialog.newlabels_id
+            update_task_in_db((task_id, *new_task_data))
+            if old_status_name != "DONE" and new_status_id == self.columns["DONE"].id:
+                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                label = get_label_by_name_from_db(complete_date)
+                if label:
+                    label_id, _, _, _ = label
+                else:
+                    label_color = generate_random_color()
+                    label_id = add_label_to_db(complete_date, label_color)
+                new_labels_id.append(label_id)
+            elif old_status_name == "DONE" and new_status_id != self.columns["DONE"].id:
+                task2labels = get_task2label_from_db(task_id)
+                for task2label_id, _, label_name, _, _ in task2labels:
+                    if label_name.startswith("Done:"):
+                        delete_task2label_from_db(task2label_id)
+            self.update_item(item, (task_id, *new_task_data))
+            new_task2labels_id = []
+            for label_id in new_labels_id:
+                new_task2label_id = add_task2label_in_db(task_id=task_id, label_id=label_id)
+                new_task2labels_id.append(new_task2label_id)
             self.action_history.record({
                 'type': 'edit_task',
                 'task_id': task_id,
                 'old_task_labels_id': old_task_labels_id,
-                'old_task_data': (old_task_name, old_task_goal, old_task_detail, old_task_deadline, status_id),
-                'new_task_labels_id': new_task_labels_id,
-                'new_task_data': (new_task_name, new_task_goal, new_task_detail, new_task_deadline, new_status_id),
+                'old_task_data': old_task_data,
+                'new_task_labels_id': new_labels_id,
+                'new_task_data': new_task_data,
                 'new_task2labels_id': new_task2labels_id,
                 'item': item
             }) 
@@ -762,7 +798,6 @@ class KanbanBoard(QWidget):
         #sio.disconnect()
         event.accept()
 
-
 class TaskDialog(QDialog):
     def __init__(self, parent=None, task_id=None):
         super().__init__()
@@ -786,10 +821,21 @@ class TaskDialog(QDialog):
         self.task_goal = QLineEdit(self)
         layout.addRow("Goal:", self.task_goal)
 
+        deadline_layout = QHBoxLayout()
         self.task_deadline = QPushButton("", self)
         self.task_deadline.setStyleSheet("text-align: left; padding-left: 10px;") 
         self.task_deadline.clicked.connect(self.open_calendar)
-        layout.addRow("Deadline:", self.task_deadline)
+        self.task_deadline.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        deadline_layout.addWidget(self.task_deadline)
+
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.addWidget(QLabel("Repeat:", self)) 
+        self.is_weekly_task = QCheckBox(self)
+        self.is_weekly_task.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        checkbox_layout.addWidget(self.is_weekly_task)
+        deadline_layout.addLayout(checkbox_layout)
+
+        layout.addRow("Deadline:", deadline_layout)
 
         self.task_detail = QTextEdit(self)
         layout.addRow("Detail:", self.task_detail)
@@ -799,7 +845,15 @@ class TaskDialog(QDialog):
         for index, (status_id, status_name) in enumerate(all_status):
             self.status_combo.addItem(status_name) 
             self.status_combo.setItemData(index, status_id)
+        self.status_combo.currentIndexChanged.connect(self.update_visibility)
         layout.addRow("Status:", self.status_combo)
+
+        self.waiting_input_label = QLabel("Waiting for", self.status_combo)
+        self.waiting_input_label.setVisible(False) 
+        self.waiting_input = QLineEdit(self)
+        self.waiting_input.setPlaceholderText("What are you waiting for?")
+        self.waiting_input.setVisible(False) 
+        layout.addRow(self.waiting_input_label, self.waiting_input)
 
         self.label_display_area = QScrollArea()
         self.label_display_area.setWidgetResizable(True)
@@ -825,6 +879,14 @@ class TaskDialog(QDialog):
         layout.addRow(self.dialog_button)
 
         self.setLayout(layout)
+
+    def update_visibility(self):
+        if self.status_combo.currentText() == "WAITING": 
+            self.waiting_input.setVisible(True)
+            self.waiting_input_label.setVisible(True) 
+        else:
+            self.waiting_input.setVisible(False)
+            self.waiting_input_label.setVisible(False) 
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return:
@@ -853,7 +915,7 @@ class TaskDialog(QDialog):
         return self.task_deadline.setText(date)
     
     def display_labels(self, task2labels):
-        for task2label_id, label_id, label_name, label_color in task2labels:
+        for task2label_id, label_id, label_name, label_color, _ in task2labels:
             label_widget = QLabel(label_name)  
             label_widget.setProperty("task2label_id", task2label_id) 
             label_widget.setProperty("label_id", label_id) 
@@ -874,7 +936,7 @@ class TaskDialog(QDialog):
             return
         label = get_label_by_name_from_db(label_name)
         if label:
-            label_id, label_name, label_color = label
+            label_id, label_name, label_color, _ = label
         else:
             label_color = generate_random_color()
             label_id = add_label_to_db(label_name, label_color)
@@ -927,8 +989,10 @@ class TaskDialog(QDialog):
         task_deadline = self.task_deadline.text()
         if task_deadline == "":
             task_deadline = None
+        is_weekly_task = self.is_weekly_task.isChecked()
         status_id = self.status_combo.itemData(self.status_combo.currentIndex()) 
-        new_task = (task_id, task_name, task_goal, task_detail, task_deadline, status_id)
+        waiting_task = self.waiting_input.text()
+        new_task = (task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task)
         update_task_in_db(new_task)
         newlabels_id = self.newlabels_id
         for label_id in newlabels_id:
@@ -964,7 +1028,6 @@ class TaskDialog(QDialog):
             self.parent.focus_next_dialog(id(self))
         event.accept()
 
-
 class CalendarDialog(QDialog):
     def __init__(self, on_date_selected):
         super().__init__()
@@ -995,7 +1058,6 @@ class CalendarDialog(QDialog):
             self.reset_deadline() 
         super().keyPressEvent(event)
 
-
 class ActionHistory:
     def __init__(self, kanban_board):
         self.kanban_board = kanban_board
@@ -1007,7 +1069,6 @@ class ActionHistory:
         self.load_redo_stack()
 
     def load_undo_stack(self):
-        # ファイルが存在する場合、undo_stackをロード
         if os.path.exists(self.undo_stack_file):
             with open(self.undo_stack_file, 'rb') as f:
                 try:
@@ -1016,7 +1077,6 @@ class ActionHistory:
                     self.undo_stack = []
 
     def load_redo_stack(self):
-        # ファイルが存在する場合、undo_stackをロード
         if os.path.exists(self.redo_stack_file):
             with open(self.redo_stack_file, 'rb') as f:
                 try:
@@ -1103,7 +1163,7 @@ class ActionHistory:
             if old_task_label_id not in new_task_labels_id:
                 add_task2label_in_db(task_id=task_id, label_id=old_task_label_id)
         for task2label_id in new_task2labels_id:
-                delete_task2label_from_db(task2label_id)
+            delete_task2label_from_db(task2label_id)
         self.kanban_board.update_item(item, task)
 
 
@@ -1116,8 +1176,8 @@ class ActionHistory:
         source_column.insertItem(last_action['original_row'], task_item)
 
         task_id = task_item.data(Qt.ItemDataRole.UserRole)
-        task_name, task_goal, task_detail, task_deadline, _ = get_task_from_db(task_id)
-        task = (task_id, task_name, task_goal, task_detail, task_deadline, source_column.id)
+        task_name, task_goal, task_detail, task_deadline, is_weekly_task, _, waiting_task = get_task_from_db(task_id)
+        task = (task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, source_column.id, waiting_task)
         update_task_in_db(task)
 
     def save_undo_stack(self):
