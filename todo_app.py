@@ -29,6 +29,8 @@ from PyQt6.QtCore import (
     QSize,
     QUrl,
     QTimer,
+    QEvent,
+    QPoint,
 )
 from PyQt6.QtGui import(
     QColor,
@@ -369,13 +371,35 @@ class SearchBox(QLineEdit):
             if self.hasFocus():
                 self.clearFocus()
         super().keyPressEvent(event)
+    
+class KanbanItem(QListWidgetItem):
+    def __init__(self, text):
+        super().__init__(text)
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.show_detail)
+        self.detail_label = None
+    
+    def show_detail(self):
+        if self.detail_label is None:
+            self.detail_label = QLabel(" ".join(self.text().split(" ")[1:]))
+            self.detail_label.setWindowFlag(Qt.WindowType.ToolTip)
+            self.detail_label.move(QCursor.pos() + QPoint(10, 10))
+            self.detail_label.show()
+    
+    def clear_detail(self):
+        if self.detail_label is not None:
+            self.detail_label.close()
+            self.detail_label = None
 
 class KanbanColumn(QListWidget):
     def __init__(self, title, parent=None):
         super().__init__()
         self.parent = parent
         self.id, self.name = get_status_by_name_from_db(title)
+        self.current_item = None
         self.init_ui()
+        self.setMouseTracking(True)
 
     def init_ui(self):
         self.setAcceptDrops(True)
@@ -504,6 +528,32 @@ class KanbanColumn(QListWidget):
             popup_window.show()
             self.clearFocus()
 
+    def mouseMoveEvent(self, event):
+        if event.type() == QEvent.Type.MouseMove:
+            item = self.itemAt(event.position().toPoint())
+            if item:
+                if self.current_item is None:
+                    self.current_item = item
+                    self.current_item.timer.start(1000)
+                elif item != self.current_item:
+                    self.current_item.clear_detail()
+                    self.current_item.timer.stop()
+                    self.current_item = item
+                    self.current_item.timer.start(1000)
+            else:
+                if self.current_item:
+                    self.current_item.clear_detail()
+                    self.current_item.timer.stop()
+                    self.current_item = None
+        return super().mouseMoveEvent(event)
+    
+    def leaveEvent(self, event):
+        if self.current_item:
+            self.current_item.clear_detail()
+            self.current_item.timer.stop()
+            self.current_item = None
+        return super().leaveEvent(event)
+
 class KanbanBoard(QWidget):
     def __init__(self):
         super().__init__()
@@ -618,7 +668,7 @@ class KanbanBoard(QWidget):
 
     def create_item(self, task):
         task_id, task_name, _, _, task_deadline, _, _, _ = task
-        item = QListWidgetItem(f"#{task_id} {task_name}")
+        item = KanbanItem(f"#{task_id} {task_name}")
         color = self.get_color(task_deadline)
         item.setForeground(color)
         item.setSizeHint(QSize(100, 50))
