@@ -339,32 +339,50 @@ class SearchBox(QLineEdit):
     def init_ui(self):
         self.setPlaceholderText("Search...")
 
+    def _filter_word(self, word, items):
+        is_exclude = word.startswith('!')
+        word = word[1:] if is_exclude else word
+        for item in items:
+            if item.isHidden():
+                continue
+            item.setHidden(not(is_exclude ^ (item.text().find(word) != -1)))
+
+    def _filter_tag(self, tag, items):
+        is_exclude = tag.startswith('!')
+        search_label = tag[1:] if is_exclude else tag
+        label2task = get_label2task_from_db(search_label)
+        task_ids = [task_id for _, task_id, _ in label2task]
+        for item in items:
+            if item.isHidden():
+                continue
+            task_id = item.data(Qt.ItemDataRole.UserRole) 
+            item.setHidden(not(is_exclude ^ (task_id in task_ids)))
+
     def filter_list(self, column):
-        search_text = self.text().lower()
+        items = []
+        for index in range(column.count()):
+            item = column.item(index)
+            item.setHidden(False)
+            items.append(item)
+
+        search_text = self.text()
+        if search_text == "":
+            return
         splitted_search_texts = search_text.split(' ')
+        is_tag = False
         for splitted_search_text in splitted_search_texts:
-            if splitted_search_text.startswith('tag:'):
-                search_text = splitted_search_text[4:]
-                is_exclude = search_text.startswith('!')
-                search_label = search_text[1:] if is_exclude else search_text
-                label2tasks = get_label2task_from_db(search_label)
-                task_ids = [ task_id for _, task_id, _ in label2tasks] 
-                for index in range(column.count()):
-                    item = column.item(index)
-                    task_id = item.data(Qt.ItemDataRole.UserRole) 
-                    if is_exclude:
-                        item.setHidden(task_id in task_ids)
-                    else:
-                        item.setHidden(task_id not in task_ids)
+            if splitted_search_text == "tag:":
+                is_tag = True
+                continue
+            if is_tag is False and splitted_search_text.startswith('tag:'):
+                self._filter_tag(splitted_search_text[4:], items)
+                continue
+
+            if is_tag:
+                self._filter_tag(splitted_search_text, items)
+                is_tag = False
             else:
-                for index in range(column.count()):
-                    item = column.item(index)
-                    item_text = item.text()
-                    if item_text.startswith('!'):
-                        item_text = item_text[1:]
-                        item.setHidden(item_text.find(splitted_search_text) != -1)
-                    else:
-                        item.setHidden(item_text.find(splitted_search_text) == -1)
+                self._filter_word(splitted_search_text, items)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
@@ -373,16 +391,24 @@ class SearchBox(QLineEdit):
         super().keyPressEvent(event)
     
 class KanbanItem(QListWidgetItem):
-    def __init__(self, text):
+    def __init__(self, text, task_id):
         super().__init__(text)
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_detail)
         self.detail_label = None
+        self.task_id = task_id
+        self.setData(Qt.ItemDataRole.UserRole, task_id) 
     
     def show_detail(self):
         if self.detail_label is None:
-            self.detail_label = QLabel(" ".join(self.text().split(" ")[1:]))
+            task_name, _, _, deadline, _, status_name, waiting_task = get_task_from_db(self.task_id)
+            content = f"{task_name}"
+            if deadline:
+                content += f"\n~{deadline}"
+            if status_name == "WAITING":
+                content += f"\nI'm waiting for... {waiting_task}"
+            self.detail_label = QLabel(content)
             self.detail_label.setWindowFlag(Qt.WindowType.ToolTip)
             self.detail_label.move(QCursor.pos() + QPoint(10, 10))
             self.detail_label.show()
@@ -534,12 +560,14 @@ class KanbanColumn(QListWidget):
             if item:
                 if self.current_item is None:
                     self.current_item = item
-                    self.current_item.timer.start(1000)
+                    self.current_item.timer.start(100)
+                    #self.current_item.timer.start(1000)
                 elif item != self.current_item:
                     self.current_item.clear_detail()
                     self.current_item.timer.stop()
                     self.current_item = item
-                    self.current_item.timer.start(1000)
+                    self.current_item.timer.start(100)
+                    #self.current_item.timer.start(1000)
             else:
                 if self.current_item:
                     self.current_item.clear_detail()
@@ -668,11 +696,10 @@ class KanbanBoard(QWidget):
 
     def create_item(self, task):
         task_id, task_name, _, _, task_deadline, _, _, _ = task
-        item = KanbanItem(f"#{task_id} {task_name}")
+        item = KanbanItem(f"#{task_id} {task_name}", task_id)
         color = self.get_color(task_deadline)
         item.setForeground(color)
         item.setSizeHint(QSize(100, 50))
-        item.setData(Qt.ItemDataRole.UserRole, task_id) 
         self.calc_priority(task_id)
         return item
 
