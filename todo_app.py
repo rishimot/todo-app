@@ -482,7 +482,7 @@ class KanbanColumn(QListWidget):
             task = (task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, self.id, waiting_task)
             update_task_in_db(task)
             if self.name == "DONE":
-                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
                 label = get_label_by_name_from_db(complete_date)
                 if label:
                     label_id, _, _, _ = label
@@ -768,7 +768,7 @@ class KanbanBoard(QWidget):
             task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
             labels_id = dialog.newlabels_id
             if status_id == self.columns["DONE"].id:
-                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
                 label = get_label_by_name_from_db(complete_date)
                 if label:
                     label_id, _, _, _ = label
@@ -824,7 +824,7 @@ class KanbanBoard(QWidget):
             new_labels_id = dialog.newlabels_id
             update_task_in_db((task_id, *new_task_data))
             if old_status_name != "DONE" and new_status_id == self.columns["DONE"].id:
-                complete_date = "Done: " + datetime.datetime.now().strftime("%Y/%m/%d")
+                complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
                 label = get_label_by_name_from_db(complete_date)
                 if label:
                     label_id, _, _, _ = label
@@ -889,6 +889,13 @@ class TaskDetail(QTextEdit):
             if re.match(r'https?://[^\s]+', selected_text):
                 webbrowser.open(selected_text)
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        cursor = self.cursorForPosition(event.pos())
+        selected_text = self.document().findBlockByNumber(cursor.blockNumber()).text()
+        if re.match(r'https?://[^\s]+', selected_text):
+            webbrowser.open(selected_text)
+        super().mouseDoubleClickEvent(event)
 
 class TaskDialog(QDialog):
     def __init__(self, parent=None, task_id=None):
