@@ -3,6 +3,8 @@ import sys
 import pickle
 import datetime
 import socketio
+import webbrowser
+import re
 from utils import (
     get_allstatus_form_db,
     get_status_by_name_from_db,
@@ -31,6 +33,7 @@ from PyQt6.QtCore import (
     QTimer,
     QEvent,
     QPoint,
+    QMimeData,
 )
 from PyQt6.QtGui import(
     QColor,
@@ -41,6 +44,7 @@ from PyQt6.QtGui import(
     QDesktopServices,
     QPixmap,
     QCursor,
+    QTextCursor,
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -848,9 +852,8 @@ class KanbanBoard(QWidget):
                 'new_task2labels_id': new_task2labels_id,
                 'item': item
             }) 
-
         column.clearFocus()
-    
+
     def setup_shortcuts(self):
         undo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Z), self)
         undo_shortcut.activated.connect(self.action_history.undo)
@@ -874,6 +877,18 @@ class KanbanBoard(QWidget):
         #self.action_history.save()
         #sio.disconnect()
         event.accept()
+
+class TaskDetail(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+    
+    def mousePressEvent(self, event):
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            cursor = self.cursorForPosition(event.pos())
+            selected_text = self.document().findBlockByNumber(cursor.blockNumber()).text()
+            if re.match(r'https?://[^\s]+', selected_text):
+                webbrowser.open(selected_text)
+        super().mousePressEvent(event)
 
 class TaskDialog(QDialog):
     def __init__(self, parent=None, task_id=None):
@@ -911,10 +926,9 @@ class TaskDialog(QDialog):
         self.is_weekly_task.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         checkbox_layout.addWidget(self.is_weekly_task)
         deadline_layout.addLayout(checkbox_layout)
-
         layout.addRow("Deadline:", deadline_layout)
 
-        self.task_detail = QTextEdit(self)
+        self.task_detail = TaskDetail(self)
         layout.addRow("Detail:", self.task_detail)
 
         self.status_combo = QComboBox(self)
@@ -954,6 +968,7 @@ class TaskDialog(QDialog):
         self.dialog_button.accepted.connect(self.handle_accept)
         self.dialog_button.rejected.connect(self.handle_reject)
         layout.addRow(self.dialog_button)
+
 
         self.setLayout(layout)
 
