@@ -133,10 +133,25 @@ def get_task2label_from_db(task_id):
         INNER JOIN label ON task2label.label_id = label.id
         WHERE task2label.task_id = ?
     """, (task_id, ))
-    status = cursor.fetchall()
+    task2label = cursor.fetchall()
     conn.close()
-    return status
+    return task2label
 
+def get_alltask2label_from_db():
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM task2label")
+    all_task2label = cursor.fetchall()
+    conn.close()
+    return all_task2label
+
+def get_alllabel_from_db():
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM label")
+    all_label = cursor.fetchall()
+    conn.close()
+    return all_label
 
 def get_label2task_from_db(label_name):
     conn = sqlite3.connect('todo.db')
