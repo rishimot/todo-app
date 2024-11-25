@@ -2,29 +2,30 @@ import os
 import sys
 import pickle
 import datetime
-import socketio
 import webbrowser
 import re
 from utils import (
+    generate_random_color,
+    enable_focus_mode,
+    disable_focus_mode,
+    count_weekdays,
     get_allstatus_form_db,
     get_status_by_name_from_db,
     get_task_from_db,
-    update_task_in_db,
-    delete_task_from_db,
     get_alltask_from_db,
     get_label_by_name_from_db,
     get_task2label_from_db,
     get_label2task_from_db,
-    generate_random_color,
-    add_label_to_db,
-    delete_label_in_db,
-    delete_task2label_from_db,
+    get_alllabel_from_db,
+    get_alltask2label_from_db,
     add_task2label_in_db,
     add_task_to_db,
     add_time_to_db,
-    enable_focus_mode,
-    disable_focus_mode,
-    count_weekdays,
+    add_label_to_db,
+    update_task_in_db,
+    delete_task_from_db,
+    delete_label_in_db,
+    delete_task2label_from_db,
 )
 from PyQt6.QtCore import (
     Qt,
@@ -33,7 +34,6 @@ from PyQt6.QtCore import (
     QTimer,
     QEvent,
     QPoint,
-    QMimeData,
 )
 from PyQt6.QtGui import(
     QColor,
@@ -44,7 +44,6 @@ from PyQt6.QtGui import(
     QDesktopServices,
     QPixmap,
     QCursor,
-    QTextCursor,
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -68,8 +67,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QCheckBox,
 )
-
-sio = socketio.Client()
 
 class DigitalTimer(QWidget):
     def __init__(self, parent=None):
@@ -873,9 +870,17 @@ class KanbanBoard(QWidget):
             return
         super().keyPressEvent(event)
 
+    def delete_unused_label(self):
+        all_task2labels = get_alltask2label_from_db()
+        used_label_id = [label_id for _, _, label_id in all_task2labels]
+        all_labels = get_alllabel_from_db()
+        all_label_id = [label_id for label_id, _, _, _ in all_labels]
+        unused_label_id = set(all_label_id) - set(used_label_id)
+        for label_id in unused_label_id:
+            delete_label_in_db(label_id)
+
     def closeEvent(self, event):
-        #self.action_history.save()
-        #sio.disconnect()
+        self.delete_unused_label()
         event.accept()
 
 class TaskDetail(QTextEdit):
