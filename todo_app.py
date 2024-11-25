@@ -880,7 +880,6 @@ class KanbanBoard(QWidget):
             delete_label_in_db(label_id)
 
     def closeEvent(self, event):
-        self.delete_unused_label()
         event.accept()
 
 class TaskDetail(QTextEdit):
@@ -1082,6 +1081,11 @@ class TaskDialog(QDialog):
             else:
                 task2label_id = label_widget.property("task2label_id")
                 delete_task2label_from_db(task2label_id)
+
+                all_task2label_id = get_alltask2label_from_db()
+                all_used_label_id = list(set([_label_id for _, _, _label_id in all_task2label_id]))
+                if label_id not in all_used_label_id:
+                    delete_label_in_db(label_id)
             label_widget.deleteLater() 
             self.selected_label = None
 
