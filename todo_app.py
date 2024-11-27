@@ -1001,7 +1001,6 @@ class TaskDialog(QDialog):
         self.dialog_button.rejected.connect(self.handle_reject)
         layout.addRow(self.dialog_button)
 
-
         self.setLayout(layout)
 
     def update_visibility(self):

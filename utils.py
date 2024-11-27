@@ -120,9 +120,9 @@ def get_label_by_name_from_db(name):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute(f"SELECT * FROM label WHERE name = ?", (name, ))
-    status = cursor.fetchone()
+    label = cursor.fetchone()
     conn.close()
-    return status
+    return label
 
 def get_task2label_from_db(task_id):
     conn = sqlite3.connect('todo.db')

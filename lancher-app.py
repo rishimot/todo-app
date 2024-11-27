@@ -70,7 +70,9 @@ class LancherTaskDialog(TaskDialog):
         self.task_goal.clear()
         self.task_detail.clear()
         self.task_deadline.setText(None)
+        self.is_weekly_task.setChecked(False)
         self.status_combo.setCurrentText("TODO") 
+        self.waiting_input.clear()
         self.label_input.clear()
         self.newlabels_id = []
         while self.label_display_layout.count():
