@@ -120,8 +120,11 @@ class DigitalTimer(QWidget):
         button.mousePressEvent = callback
         return button
 
+    def is_timer_running(self):
+        return self.start_time is not None
+
     def start_timer(self):
-        if self.start_time is None:
+        if not self.is_timer_running():
             enable_focus_mode()
             self.start_time = datetime.datetime.now().strftime(self.time_format)
         self.timer.start(1000) 
@@ -222,8 +225,8 @@ class PopupTaskWindow(QDialog):
         self.task_layout.addWidget(self.target)
         main_layout.addLayout(self.task_layout)
 
-        timer_layout = QVBoxLayout()
         self.task_timer = DigitalTimer(self)
+        timer_layout = QVBoxLayout()
         timer_layout.addWidget(self.task_timer)
         main_layout.addLayout(timer_layout)
 
@@ -244,6 +247,13 @@ class PopupTaskWindow(QDialog):
     def keyPressEvent(self, event: QMouseEvent):
         if event.key() == Qt.Key.Key_Escape:
             return
+        if event.key() == Qt.Key.Key_N and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if self.kanban_board.isHidden():
+                self.kanban_board.show()
+            if self.kanban_board.isMinimized():
+                self.kanban_board.showNormal()
+            if not self.kanban_board.isActiveWindow():
+                self.kanban_board.activateWindow()
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             self.close()
         if event.key() == Qt.Key.Key_Return and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
@@ -258,6 +268,7 @@ class PopupTaskWindow(QDialog):
         if self.is_pinned:
             self.pin.setPixmap(self.pin_red_pixmap)
             self.unlock_pinonly_mode()
+            self.enlarge_mode()
         else:
             self.pin.setPixmap(self.pin_white_pixmap)
 
@@ -270,6 +281,13 @@ class PopupTaskWindow(QDialog):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.start_pos = event.globalPosition().toPoint()  
+        if event.button() == Qt.MouseButton.RightButton:
+            if self.kanban_board.isHidden():
+                self.kanban_board.show()
+            if self.kanban_board.isMinimized():
+                self.kanban_board.showNormal()
+            if not self.kanban_board.isActiveWindow():
+                self.kanban_board.activateWindow()
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -311,6 +329,8 @@ class PopupTaskWindow(QDialog):
         self.adjustSize()
 
     def small_mode(self):
+        if not self.task_timer.is_timer_running():
+            return
         if self.target.text() != "":
             self.task_name.setText(self.target.text())
         self.target.hide()
@@ -912,6 +932,7 @@ class TaskDialog(QDialog):
         self.setup_shortcuts()
     
     def init_ui(self):
+        self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle("Task")
         self.setGeometry(200, 200, 500, 400)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
