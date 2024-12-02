@@ -663,7 +663,7 @@ class KanbanBoard(QWidget):
         items = {}
         for task in tasks:
             task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_name, waiting_task = task
-            if status_name == "DONE" and is_weekly_task and datetime.datetime.strptime(task_deadline, "%Y/%m/%d") < datetime.datetime.now():
+            if status_name == "DONE" and is_weekly_task and (datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(days=1)) <= datetime.datetime.now():
                 new_deadline = (datetime.datetime.strptime(task_deadline, "%Y/%m/%d") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d") if task_deadline else None
                 new_status_id = self.columns["TODO"].id
                 task = (task_id, task_name, task_goal, task_detail, new_deadline, is_weekly_task, new_status_id, waiting_task)
