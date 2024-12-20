@@ -3,7 +3,7 @@ import ctypes
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
-from utils import add_task_to_db, add_task2label_in_db
+from utils import add_task_to_db_by_api, add_task2label_in_db
 from todo_app import TaskDialog
 from ctypes import wintypes
 import win32con
@@ -53,7 +53,7 @@ class LancherTaskDialog(TaskDialog):
         is_weekly_task = self.is_weekly_task.isChecked()
         status_id = self.status_combo.itemData(self.status_combo.currentIndex())
         waiting_task = self.waiting_input.text()
-        task_id = add_task_to_db((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
+        task_id = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
         labels_id = self.newlabels_id
         for label_id in labels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)

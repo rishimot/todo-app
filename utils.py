@@ -66,14 +66,14 @@ def add_time_to_db(time_data):
     return last_time_id
 
 def update_task_in_db(task):
-    task_id, task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task = task
+    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE task 
         SET name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ?
         WHERE id = ?
-    """, (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, task_id))
+    """, (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, task_id))
     conn.commit()
     conn.close()
 
@@ -208,19 +208,23 @@ def get_task_from_db_by_api(task_id):
         return {
             task_data.name,
             task_data.goal,
+            task_data.is_weekly_task,
             task_data.detail,
             task_data.deadline,
             task_data.status_id,
+            task_data.waiting_task,
         }
 
 def add_task_to_db_by_api(task_data):
-    task_name, task_goal, task_detail, task_deadline_date, status_id = task_data
+    task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task_data
     payload = {
         "name": task_name,
         "goal": task_goal,
         "detail": task_detail,
-        "deadline": task_deadline_date,
-        "status_id": status_id
+        "is_weekly_task": is_weekly_task,
+        "deadline": task_deadline,
+        "status_id": status_id,
+        "waiting_task": waiting_task
     }
     response = requests.post(f"{SERVER_URL}/api/task", json=payload)
     if response.status_code == 200:
@@ -229,36 +233,29 @@ def add_task_to_db_by_api(task_data):
     return None
    
 
-def update_task_in_db_by_api(task):
-    task_id, task_name, task_goal, task_detail, task_deadline_date, status_id = task
+def update_task_in_db_by_api(task_data, new_label_id=[]):
+    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task_data
     payload = {
         "name": task_name,
         "goal": task_goal,
         "detail": task_detail,
-        "deadline": task_deadline_date,
-        "status_id": status_id
+        "is_weekly_task": is_weekly_task,
+        "deadline": task_deadline,
+        "status_id": status_id,
+        "waiting_task": waiting_task,
+        "newlabel_id": new_label_id,
     }
     response = requests.patch(f"{SERVER_URL}/api/task/{task_id}", json=payload)
-
+    if response.status_code == 200:
+        response_data = response.json()
+        return response_data["taskId"]
+    return None
 
 def delete_task_from_db_by_api(task_id):
     response = requests.delete(f"{SERVER_URL}/api/task/{task_id}")
     if response.status_code == 200:
-        return 
-
-def enable_focus_mode():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings", 0, winreg.KEY_SET_VALUE) as key:
-            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 0)
-    except Exception as e:
-        print(f"エラーが発生しました: {e}")
-
-def disable_focus_mode():
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Notifications\Settings", 0, winreg.KEY_SET_VALUE) as key:
-            winreg.SetValueEx(key, "NOC_GLOBAL_SETTING_TOASTS_ENABLED", 0, winreg.REG_DWORD, 1)
-    except Exception as e:
-        print(f"エラーが発生しました: {e}")
+        return task_id
+    return None
 
 def count_weekdays(start_date, end_date):
     weekdays = []

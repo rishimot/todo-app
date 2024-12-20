@@ -1,10 +1,12 @@
 {
-  "name": "todo-app-api",
+  "name": "todo-server",
   "version": "1.0.0",
-  "main": "server-app.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron .",
+    "start": "node.exe server.js",
+    "install-service": "winser -i -a",
+    "uninstall-service": "winser -r -x",
     "build": "electron-builder"
   },
   "author": "",
@@ -15,7 +17,8 @@
     "nodemon": "^3.1.7",
     "socket.io": "^4.8.0",
     "socketio": "^1.0.0",
-    "sqlite3": "^5.1.7"
+    "sqlite3": "^5.1.7",
+    "winser": "^1.0.3"
   },
   "description": "",
   "build": {

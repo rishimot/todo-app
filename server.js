@@ -6,7 +6,12 @@ const { Server } = require('socket.io');
 const { createServer } = require('node:http');
 const util = require('util');
 
-const db = new sqlite3.Database(path.join(__dirname, "todo.db"));
+const deploy = true;
+let database_path = "todo.db";
+if (deploy) {
+    database_path = path.join("dist", "todo.db");
+}
+const db = new sqlite3.Database(path.join(__dirname, database_path));
 const app = express();
 const server = createServer(app);
 const sio = new Server(server);
@@ -43,12 +48,12 @@ app.get('/api/task/:id', (req, res) => {
 });
 
 app.post('/api/task', (req, res) => {
-    const { name, goal, detail, deadline, status_id } = req.body;
+    const { name, goal, detail, deadline, is_weekly_task, status_id, waiting_task } = req.body;
     if (!name) {
         return res.status(400).json({ message: 'タスクを正しく指定してください。' });
     }
     db.serialize(() => {
-        db.run('insert into task (name, goal, detail, deadline, status_id) values (?, ?, ?, ?, ?)',  [name, goal, detail, deadline, status_id], function(err) {
+        db.run('insert into task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task) values (?, ?, ?, ?, ?, ?, ?)',  [name, goal, detail, deadline, is_weekly_task, status_id, waiting_task], function(err) {
             if (err) {
                 return res.status(400);
             }
@@ -59,21 +64,34 @@ app.post('/api/task', (req, res) => {
     });
 });
 
-app.patch('/api/task/:id', (req, res) => {
+app.patch('/api/task/:id', async (req, res) => {
     const taskId = parseInt(req.params.id);
-    const { name, goal, detail, deadline, status_id } = req.body;
+    const { name, goal, detail, deadline, is_weekly_task, status_id, waiting_task, newlabel_id } = req.body;
     if (!name) {
         return res.status(400).json({ message: 'タスクを正しく指定してください。' });
     }
-    db.serialize(() => {
-        db.run('update task set name = ?, goal = ?, detail = ?, deadline = ?, status_id = ? where id = ?',  name, goal, detail, deadline, status_id, taskId, (err) => {
-            if (err) {
-                return res.status(404).json(err);
-            }
-            sio.emit('update', taskId);
-            return res.status(200).json("OK");
-        });
-    });
+    try {
+        const old_task_data = await dbGet(
+            `select task.id, task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, task.status_id, task.waiting_task
+            from task 
+            where task.id = ?`, 
+            taskId
+        );
+        const old_task2label_id = await dbAll(
+            "select * from task2label where task_id = ?", 
+            taskId
+        );
+        const old_task_label_id = old_task2label_id.map(elem => elem["label_id"])
+        if (!old_task_label_id) {
+            return res.status(402).json({ message: "The task2label doesn't exist" });
+        }
+        await dbGet('update task set name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ? where id = ?',  name, goal, detail, deadline, is_weekly_task, status_id, waiting_task, taskId);
+        sio.emit('update', taskId, old_task_data, old_task_label_id, req.body, newlabel_id);
+        return res.status(200).json({ taskId: taskId });
+    } catch (error) {
+        console.log(error);
+        return res.status(400).json({ message: "An error occurred", error });
+    }
 });
 
 
@@ -82,30 +100,17 @@ app.delete('/api/task/:id', async (req, res) => {
 
     try {
         const task_data = await dbGet(
-            `select task.id, task.name, task.goal, task.detail, task.deadline, status.name AS status_name
+            `select task.id, task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, task.status_id, task.waiting_task
              from task 
-             inner join status on task.status_id = status.id 
              where task.id = ?`, 
              taskId
         );
         if (!task_data) {
             return res.status(401).json({ message: "The task doesn't exist" });
         }
-
-        const task2label_data = await dbAll(
-            "select * from task2label where task_id = ?", 
-            taskId
-        );
-        if (!task2label_data) {
-            return res.status(402).json({ message: "The task2label doesn't exist" });
-        }
-
         await dbRun('delete from task where id = ?', taskId);
-
-        const labels_id = task2label_data.map(data => data.label_id);
-        const response_data = { ...task_data, labels_id };
-        sio.emit('delete', response_data);
-        return res.status(200).json({ deletedTask: response_data });
+        sio.emit('delete', task_data);
+        return res.status(200).json({ deletedTask: taskId });
     } catch (error) {
         console.log(error);
         return res.status(400).json({ message: "An error occurred", error });
