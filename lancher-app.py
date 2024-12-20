@@ -45,8 +45,11 @@ class LancherTaskDialog(TaskDialog):
         task_name = self.task_name.text()
         task_goal = self.task_goal.text()
         task_detail = self.task_detail.toPlainText()
-        task_deadline = self.task_deadline.text()
-        task_deadline = None if task_deadline == "" else task_deadline
+        task_deadline_date = self.task_deadline_date.text()
+        task_deadline = None 
+        if task_deadline_date != "":
+            task_deadline_time = self.task_deadline_time.text()
+            task_deadline = task_deadline_date + " " + task_deadline_time
         is_weekly_task = self.is_weekly_task.isChecked()
         status_id = self.status_combo.itemData(self.status_combo.currentIndex())
         waiting_task = self.waiting_input.text()
@@ -69,7 +72,7 @@ class LancherTaskDialog(TaskDialog):
         self.task_name.clear()
         self.task_goal.clear()
         self.task_detail.clear()
-        self.task_deadline.setText(None)
+        self.task_deadline_date.setText(None)
         self.is_weekly_task.setChecked(False)
         self.status_combo.setCurrentText("TODO") 
         self.waiting_input.clear()

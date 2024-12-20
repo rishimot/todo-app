@@ -46,10 +46,10 @@ def get_alltask_to_api():
     return response
 
 def add_task_to_db(task):
-    task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
+    task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task) VALUES (?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
+    cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task) VALUES (?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task))
     last_task_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -66,14 +66,14 @@ def add_time_to_db(time_data):
     return last_time_id
 
 def update_task_in_db(task):
-    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
+    task_id, task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE task 
         SET name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ?
         WHERE id = ?
-    """, (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, task_id))
+    """, (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, task_id))
     conn.commit()
     conn.close()
 
@@ -214,12 +214,12 @@ def get_task_from_db_by_api(task_id):
         }
 
 def add_task_to_db_by_api(task_data):
-    task_name, task_goal, task_detail, task_deadline, status_id = task_data
+    task_name, task_goal, task_detail, task_deadline_date, status_id = task_data
     payload = {
         "name": task_name,
         "goal": task_goal,
         "detail": task_detail,
-        "deadline": task_deadline,
+        "deadline": task_deadline_date,
         "status_id": status_id
     }
     response = requests.post(f"{SERVER_URL}/api/task", json=payload)
@@ -230,12 +230,12 @@ def add_task_to_db_by_api(task_data):
    
 
 def update_task_in_db_by_api(task):
-    task_id, task_name, task_goal, task_detail, task_deadline, status_id = task
+    task_id, task_name, task_goal, task_detail, task_deadline_date, status_id = task
     payload = {
         "name": task_name,
         "goal": task_goal,
         "detail": task_detail,
-        "deadline": task_deadline,
+        "deadline": task_deadline_date,
         "status_id": status_id
     }
     response = requests.patch(f"{SERVER_URL}/api/task/{task_id}", json=payload)
@@ -262,8 +262,8 @@ def disable_focus_mode():
 
 def count_weekdays(start_date, end_date):
     weekdays = []
-    for i in range((end_date - start_date).days + 1):
-        date = start_date + datetime.timedelta(days=i)
-        if (date.weekday() <= 5) and (not jpholiday.is_holiday(date)):
-            weekdays.append(date)
+    while start_date < end_date:
+        start_date += datetime.timedelta(days=1)
+        if (start_date.weekday() <= 5) and (not jpholiday.is_holiday(start_date)):
+            weekdays.append(start_date)
     return len(weekdays)
