@@ -1,9 +1,9 @@
 import sqlite3
 import random
 import requests
-import winreg
 import datetime
 import jpholiday
+SERVER_URL = 'http://localhost:3000/'
 
 def generate_random_color():
     r = random.randint(70, 255)
@@ -15,7 +15,7 @@ def get_task_from_db(task_id):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task
+        SELECT task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task, task.remind_date, task.remind_input
         FROM task 
         INNER JOIN status ON task.status_id = status.id
         WHERE task.id = ?
@@ -24,12 +24,11 @@ def get_task_from_db(task_id):
     conn.close()
     return task
 
-
 def get_alltask_from_db():
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task.id, task.name, task.goal, task.detail, task.deadline, is_weekly_task, status.name, waiting_task
+        SELECT task.id, task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task, task.remind_date, task.remind_input
         FROM task 
         INNER JOIN status ON task.status_id = status.id
     """)
@@ -37,8 +36,8 @@ def get_alltask_from_db():
     conn.close()
     return task
 
-def get_alltask_to_api():
-    response = requests.get("http://localhost:3000/api/task/")
+def get_alltask_by_api():
+    response = requests.get(f"{SERVER_URL}/api/task/")
     if response.status_code == 200:
         print("タスクが追加されました。")
     else:
@@ -46,10 +45,10 @@ def get_alltask_to_api():
     return response
 
 def add_task_to_db(task):
-    task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task = task
+    task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, remind_date = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task) VALUES (?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task))
+    cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task, remind_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, remind_date))
     last_task_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -65,18 +64,24 @@ def add_time_to_db(time_data):
     conn.close()
     return last_time_id
 
+def delete_time_from_db(id):
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute(f"DELETE FROM time WHERE id = {id}")
+    conn.commit()
+    conn.close()
+
 def update_task_in_db(task):
-    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task
+    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date, remind_input = task
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE task 
-        SET name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ?
+        SET name = ?, goal = ?, detail = ?, deadline = ?, is_weekly_task = ?, status_id = ?, waiting_task = ?, remind_date = ?
         WHERE id = ?
-    """, (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, task_id))
+    """, (task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date, remind_input, task_id))
     conn.commit()
     conn.close()
-
 
 def delete_task_from_db(task_id):
     conn = sqlite3.connect('todo.db')
@@ -84,6 +89,14 @@ def delete_task_from_db(task_id):
     cursor.execute(f"DELETE FROM task WHERE id = {task_id}")
     conn.commit()
     conn.close()
+    all_task2labels = get_alltask2label_from_db()
+    for task2label_id, source_task_id, _ in all_task2labels:
+        if task_id == source_task_id:
+            delete_task2label_from_db(task2label_id)
+    all_time = get_alltime_from_db()
+    for time_id, source_task_id, _ in all_time:
+        if task_id == source_task_id:
+            delete_time_from_db(time_id)
 
 def delete_label_from_db(label_id):
     conn = sqlite3.connect('todo.db')
@@ -91,6 +104,10 @@ def delete_label_from_db(label_id):
     cursor.execute(f"DELETE FROM label WHERE id = {label_id}")
     conn.commit()
     conn.close()
+    all_task2labels = get_alltask2label_from_db()
+    for task2label_id, _, source_label_id in all_task2labels:
+        if label_id == source_label_id:
+            delete_task2label_from_db(task2label_id)
 
 def get_status_by_id_from_db(id):
     conn = sqlite3.connect('todo.db')
@@ -145,6 +162,14 @@ def get_alltask2label_from_db():
     conn.close()
     return all_task2label
 
+def get_alltime_from_db():
+    conn = sqlite3.connect('todo.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM time")
+    all_time = cursor.fetchall()
+    conn.close()
+    return all_time
+
 def get_alllabel_from_db():
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
@@ -189,7 +214,6 @@ def delete_task2label_from_db(id):
     conn.commit()
     conn.close()
 
-
 def add_task2label_in_db(task_id, label_id):
     conn = sqlite3.connect('todo.db')
     cursor = conn.cursor()
@@ -199,8 +223,6 @@ def add_task2label_in_db(task_id, label_id):
     conn.close()
     return last_task2label_id
 
-
-SERVER_URL = 'http://localhost:3000/'
 def get_task_from_db_by_api(task_id):
     response = requests.get(f"{SERVER_URL}/api/task/{task_id}")
     if response.status_code == 200:
@@ -213,28 +235,12 @@ def get_task_from_db_by_api(task_id):
             task_data.deadline,
             task_data.status_id,
             task_data.waiting_task,
+            task_data.remind_date,
+            task_data.remind_input,
         }
 
 def add_task_to_db_by_api(task_data):
-    task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task_data
-    payload = {
-        "name": task_name,
-        "goal": task_goal,
-        "detail": task_detail,
-        "is_weekly_task": is_weekly_task,
-        "deadline": task_deadline,
-        "status_id": status_id,
-        "waiting_task": waiting_task
-    }
-    response = requests.post(f"{SERVER_URL}/api/task", json=payload)
-    if response.status_code == 200:
-        response_data = response.json()
-        return response_data["taskId"]
-    return None
-   
-
-def update_task_in_db_by_api(task_data, new_label_id=[]):
-    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task = task_data
+    task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date, remind_input = task_data
     payload = {
         "name": task_name,
         "goal": task_goal,
@@ -243,6 +249,27 @@ def update_task_in_db_by_api(task_data, new_label_id=[]):
         "deadline": task_deadline,
         "status_id": status_id,
         "waiting_task": waiting_task,
+        "remind_date": remind_date,
+        "remind_input": remind_input
+    }
+    response = requests.post(f"{SERVER_URL}/api/task", json=payload)
+    if response.status_code == 200:
+        response_data = response.json()
+        return response_data["taskId"]
+    return None
+   
+def update_task_in_db_by_api(task_data, new_label_id=[]):
+    task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date, remind_input = task_data
+    payload = {
+        "name": task_name,
+        "goal": task_goal,
+        "detail": task_detail,
+        "is_weekly_task": is_weekly_task,
+        "deadline": task_deadline,
+        "status_id": status_id,
+        "waiting_task": waiting_task,
+        "remind_date": remind_date,
+        "remind_input": remind_input,
         "newlabel_id": new_label_id,
     }
     response = requests.patch(f"{SERVER_URL}/api/task/{task_id}", json=payload)
@@ -254,6 +281,14 @@ def update_task_in_db_by_api(task_data, new_label_id=[]):
 def delete_task_from_db_by_api(task_id):
     response = requests.delete(f"{SERVER_URL}/api/task/{task_id}")
     if response.status_code == 200:
+        all_task2labels = get_alltask2label_from_db()
+        for task2label_id, source_task_id, _ in all_task2labels:
+            if task_id == source_task_id:
+                delete_task2label_from_db(task2label_id)
+        all_time = get_alltime_from_db()
+        for time_id, source_task_id, _ in all_time:
+            if task_id == source_task_id:
+                delete_time_from_db(time_id)
         return task_id
     return None
 

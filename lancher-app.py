@@ -53,7 +53,9 @@ class LancherTaskDialog(TaskDialog):
         is_weekly_task = self.is_weekly_task.isChecked()
         status_id = self.status_combo.itemData(self.status_combo.currentIndex())
         waiting_task = self.waiting_input.text()
-        task_id = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task))
+        has_reminder = self.reminder.isChecked()
+        remind_date = self.remind_timer.text() if has_reminder else None
+        task_id = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date))
         labels_id = self.newlabels_id
         for label_id in labels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
@@ -83,6 +85,8 @@ class LancherTaskDialog(TaskDialog):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        self.reminder.setChecked(False)
+        self.remind_timer.clear()
         self.hide()
 
 def main():
