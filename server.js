@@ -138,6 +138,7 @@ app.delete('/api/task/:id', async (req, res) => {
         }
         if (taskId in reminder) {
             clearTimeout(reminder[taskId]);
+            delete reminder[taskId];
         }
         await dbRun('delete from task where id = ?', taskId);
         sio.emit('delete', task_data);
