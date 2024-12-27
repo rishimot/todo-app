@@ -3,7 +3,13 @@ import random
 import requests
 import datetime
 import jpholiday
-SERVER_URL = 'http://localhost:3000/'
+import json
+
+with open('config.json', 'r') as config_file:
+    config = json.load(config_file)
+port = config.get('port', 8000)
+database_path = config.get('database_path', "./todo.db")
+SERVER_URL = f'http://localhost:{port}/'
 
 def generate_random_color():
     r = random.randint(70, 255)
@@ -12,7 +18,7 @@ def generate_random_color():
     return f"#{r:02x}{g:02x}{b:02x}"
 
 def get_task_from_db(task_id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task, task.remind_date, task.remind_input
@@ -25,7 +31,7 @@ def get_task_from_db(task_id):
     return task
 
 def get_alltask_from_db():
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT task.id, task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, status.name, task.waiting_task, task.remind_date, task.remind_input
@@ -46,7 +52,7 @@ def get_alltask_by_api():
 
 def add_task_to_db(task):
     task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, remind_date = task
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO task (name, goal, detail, deadline, is_weekly_task, status_id, waiting_task, remind_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (task_name, task_goal, task_detail, task_deadline_date, is_weekly_task, status_id, waiting_task, remind_date))
     last_task_id = cursor.lastrowid
@@ -56,7 +62,7 @@ def add_task_to_db(task):
 
 def add_time_to_db(time_data):
     start_time, end_time, duration, task_id = time_data
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO time (start_time, end_time, task_id) VALUES (?, ?, ?)", (start_time, end_time, task_id))
     last_time_id = cursor.lastrowid
@@ -65,7 +71,7 @@ def add_time_to_db(time_data):
     return last_time_id
 
 def delete_time_from_db(id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM time WHERE id = {id}")
     conn.commit()
@@ -73,7 +79,7 @@ def delete_time_from_db(id):
 
 def update_task_in_db(task):
     task_id, task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date, remind_input = task
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
         UPDATE task 
@@ -84,7 +90,7 @@ def update_task_in_db(task):
     conn.close()
 
 def delete_task_from_db(task_id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM task WHERE id = {task_id}")
     conn.commit()
@@ -99,7 +105,7 @@ def delete_task_from_db(task_id):
             delete_time_from_db(time_id)
 
 def delete_label_from_db(label_id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM label WHERE id = {label_id}")
     conn.commit()
@@ -110,7 +116,7 @@ def delete_label_from_db(label_id):
             delete_task2label_from_db(task2label_id)
 
 def get_status_by_id_from_db(id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"SELECT * FROM status WHERE id = {id}")
     status = cursor.fetchone()
@@ -118,7 +124,7 @@ def get_status_by_id_from_db(id):
     return status
 
 def get_status_by_name_from_db(name):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"SELECT * FROM status WHERE name = ?", (name, ))
     status = cursor.fetchone()
@@ -126,7 +132,7 @@ def get_status_by_name_from_db(name):
     return status
 
 def get_allstatus_form_db():
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM status")
     all_status = cursor.fetchall()
@@ -134,7 +140,7 @@ def get_allstatus_form_db():
     return all_status
 
 def get_label_by_name_from_db(name):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"SELECT * FROM label WHERE name = ?", (name, ))
     label = cursor.fetchone()
@@ -142,7 +148,7 @@ def get_label_by_name_from_db(name):
     return label
 
 def get_task2label_from_db(task_id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT task2label.id, label.id, label.name, label.color, label.point
@@ -155,7 +161,7 @@ def get_task2label_from_db(task_id):
     return task2label
 
 def get_alltask2label_from_db():
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM task2label")
     all_task2label = cursor.fetchall()
@@ -163,7 +169,7 @@ def get_alltask2label_from_db():
     return all_task2label
 
 def get_alltime_from_db():
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM time")
     all_time = cursor.fetchall()
@@ -171,7 +177,7 @@ def get_alltime_from_db():
     return all_time
 
 def get_alllabel_from_db():
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM label")
     all_label = cursor.fetchall()
@@ -179,7 +185,7 @@ def get_alllabel_from_db():
     return all_label
 
 def get_label2task_from_db(label_name):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT task2label.id, task2label.task_id, task2label.label_id
@@ -192,7 +198,7 @@ def get_label2task_from_db(label_name):
     return status
 
 def add_label_to_db(name, color, point=0):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO label (name, color, point) VALUES (?, ?, ?)", (name, color, point))
     last_task_id = cursor.lastrowid
@@ -201,21 +207,21 @@ def add_label_to_db(name, color, point=0):
     return last_task_id
 
 def delete_label_in_db(id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM label WHERE id = {id}")
     conn.commit()
     conn.close()
 
 def delete_task2label_from_db(id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM task2label WHERE id = {id}")
     conn.commit()
     conn.close()
 
 def add_task2label_in_db(task_id, label_id):
-    conn = sqlite3.connect('todo.db')
+    conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("INSERT INTO task2label (task_id, label_id) VALUES (?, ?)", (task_id, label_id))
     last_task2label_id = cursor.lastrowid

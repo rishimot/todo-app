@@ -6,18 +6,19 @@ const path = require('path');
 const { Server } = require('socket.io');
 const { createServer } = require('node:http');
 const util = require('util');
+const fs = require('fs');
 
 const args = process.argv;
-let port = 8000;
-let database_path = path.join(__dirname, "todo.db");
+let config_path = "./config.json";
 args.forEach(arg => {
-    if (arg.startsWith('--dbPath=')) {
-        database_path = arg.split('=')[1];
-    }
-    if (arg.startsWith('--port=')) {
-        port = arg.split('=')[1];
+    if (arg.startsWith('--config_path=')) {
+        config_path = arg.split('=')[1];
     }
 });
+const data = fs.readFileSync(config_path, 'utf8');
+const config = JSON.parse(data);
+const port = config.port || 8000; 
+const database_path = config.database_path || "./todo.db";
 const db = new sqlite3.Database(database_path);
 const app = express();
 const server = createServer(app);
@@ -32,15 +33,16 @@ app.use(express.json());
 
 const reminder = {};
 function set_reminder(taskId, time, message) {
-    const reminderTime = new Date(time).getTime();
+    if (!time) return;
+    const reminderTime = Date.parse(time);
     const now = Date.now();
-    if (reminderTime < now) {
+    const timeout = reminderTime - now;
+    if (timeout < 0) {
         return;
     }
     if (taskId in reminder) {
         clearTimeout(reminder[taskId]);
     }
-    const timeout = reminderTime - now;
     const timerId = setTimeout(() => {
         notifier.notify({
             title: 'Reminder',
@@ -52,27 +54,25 @@ function set_reminder(taskId, time, message) {
     reminder[taskId] = timerId;
 }
 
-app.get('/api/task', (req, res) => {
-    db.serialize(() => {
-        db.all("select * from task", (err, rows) => {
-            if (err) {
-                return res.status(400);
-            }
-            return res.status(200).json(rows);
-        });
-    });
+app.get('/api/task', async (req, res) => {
+    try {
+        const allTasks = dbAll("select * from task");
+        return res.status(200).json(allTasks);
+    }
+    catch {
+        return res.status(400);
+    }
 });
 
-app.get('/api/task/:id', (req, res) => {
+app.get('/api/task/:id', async(req, res) => {
     const taskId = parseInt(req.params.id);
-    db.serialize(() => {
-        db.get("select * from task where id = ?", taskId, (err, rows) => {
-            if (err) {
-                return res.status(400).json({ message: "The task doesn't exist"});
-            }
-            return res.status(200).json(rows);
-        });
-    });
+    try {
+        const task = await dbGet("select * from task where id = ?", taskId);
+        return res.status(200).json(task);
+    }
+    catch {
+        return res.status(400).json({ message: "The task doesn't exist"});
+    }
 });
 
 app.post('/api/task', (req, res) => {
@@ -86,6 +86,9 @@ app.post('/api/task', (req, res) => {
                 return res.status(400);
             }
             const taskId = this.lastID;
+            if (remind_date) {
+                set_reminder(taskId, remind_date, remind_input);
+            }
             sio.emit('post', taskId);
             return res.status(200).json({ taskId: taskId });
         });
@@ -129,8 +132,8 @@ app.delete('/api/task/:id', async (req, res) => {
     try {
         const task_data = await dbGet(
             `select task.id, task.name, task.goal, task.detail, task.deadline, task.is_weekly_task, task.status_id, task.waiting_task, task.remind_date, task.remind_input
-             from task 
-             where task.id = ?`, 
+             from task
+             where task.id = ?`,
              taskId
         );
         if (!task_data) {
@@ -166,14 +169,14 @@ server.listen(port, async() => {
         for (const task of tasks) {
             const taskId = task.id;
             const status_name = task.name;
-            const time = task.remind_date;
+            const date = task.remind_date;
             const message = task.remind_input;
-            if (time && status_name !== "DONE") {
-                set_reminder(taskId, time, message);
+            if (date && status_name !== "DONE") {
+                set_reminder(taskId, date, message);
             }
         }
     } catch (error) {
-        return res.status(400).json({ message: "An error occurred", error });
+        console.log("An error occurred", error);
     }
     console.log(`Server is running at http://localhost:${port}`);
 });

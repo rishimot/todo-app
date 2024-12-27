@@ -4,7 +4,6 @@ import pickle
 import datetime
 import webbrowser
 import socketio
-import requests
 import re
 from utils import (
     generate_random_color,
@@ -1236,7 +1235,7 @@ class TaskDialog(QDialog):
             """)
         self.selected_label = label_widget
         self.selected_label.setStyleSheet("border: 2px solid blue;")
-    
+
     def remove_label(self):
         if self.selected_label:
             label_widget = self.selected_label
