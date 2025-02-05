@@ -11,6 +11,7 @@ import win32con
 HOTKEY_ID = 1  
 MOD_CTRL_ALT = win32con.MOD_CONTROL | win32con.MOD_ALT
 VK_SPACE = win32con.VK_SPACE
+MOD_CTRL = win32con.MOD_CONTROL
 
 class MSG(ctypes.Structure):
     _fields_ = [("hwnd", wintypes.HWND),
@@ -50,20 +51,23 @@ class LancherTaskDialog(TaskDialog):
         if task_deadline_date != "":
             task_deadline_time = self.task_deadline_time.text()
             task_deadline = task_deadline_date + " " + task_deadline_time
-        is_weekly_task = self.is_weekly_task.isChecked()
+        task_type = self.task_type.currentText()
         status_id = self.status_combo.itemData(self.status_combo.currentIndex())
         waiting_task = self.waiting_input.text()
         has_reminder = self.reminder.isChecked()
         remind_date = self.remind_timer.text() if has_reminder else None
-        task_id = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, is_weekly_task, status_id, waiting_task, remind_date))
+        remind_input = self.remind_input.text() if has_reminder else None
+        result = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, task_type, status_id, waiting_task, remind_date, remind_input))
+        assert result, "データベースの追加に失敗しました。"
+        task_id = result["taskId"]
         labels_id = self.newlabels_id
         for label_id in labels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
-        self.clear_input()
     
     def handle_accept(self):
         self.add_label()
         self.post_task()
+        self.clear_input()
         self.accept()
 
     def handle_reject(self):
@@ -75,7 +79,7 @@ class LancherTaskDialog(TaskDialog):
         self.task_goal.clear()
         self.task_detail.clear()
         self.task_deadline_date.setText(None)
-        self.is_weekly_task.setChecked(False)
+        self.task_type.setCurrentText("-")
         self.status_combo.setCurrentText("TODO") 
         self.waiting_input.clear()
         self.label_input.clear()
@@ -87,13 +91,14 @@ class LancherTaskDialog(TaskDialog):
                 widget.deleteLater()
         self.reminder.setChecked(False)
         self.remind_timer.clear()
+        self.remind_input.clear()
         self.hide()
 
 def main():
     app = QApplication(sys.argv)
     lancher_app = LancherTaskDialog()
 
-    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL_ALT, VK_SPACE):
+    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL, VK_SPACE):
         print("ホットキーの登録に失敗しました")
         sys.exit(-1)
 
