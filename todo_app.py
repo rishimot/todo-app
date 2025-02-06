@@ -794,7 +794,7 @@ class KanbanBoard(QWidget):
         priority = 0
         task_id, _, _, _, task_deadline_date, _, _, _, _, _ = task
         if task_deadline_date:
-            deadline_date = datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(hours=17, minutes=45)
+            deadline_date = datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")
             now = datetime.datetime.now() 
             weekdays_diff = count_weekdays(now, deadline_date)
             if weekdays_diff <= 0:
@@ -874,7 +874,7 @@ class KanbanBoard(QWidget):
                 dialog.showNormal()
             if not dialog.isActiveWindow():
                 dialog.activateWindow()
-            #dialog.raise_()
+            dialog.raise_()
             return
         old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_task_type, old_status_name, old_waiting_task, old_remind_date, old_remind_input = get_task_from_db(task_id)
         old_task2labels_id = get_task2label_from_db(task_id)
@@ -974,6 +974,10 @@ class PopUpTaskDetail(QDialog):
         ok_shortcut.activated.connect(self.accept)
         cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel_shortcut.activated.connect(self.reject)
+        zoomin_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Plus), self)
+        zoomin_shortcut.activated.connect(self.zoom_in)
+        zoomout_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Minus), self)
+        zoomout_shortcut.activated.connect(self.zoom_out)
 
     def zoom_in(self):
         current_font_size = self.text_edit.fontPointSize()
@@ -988,7 +992,7 @@ class PopUpTaskDetail(QDialog):
         self.set_all_text_font_size(new_font_size)
 
     def set_all_text_font_size(self, font_size):
-        cursor = QTextCursor(self.document())
+        cursor = QTextCursor(self.text_edit.document())
         cursor.select(QTextCursor.SelectionType.Document)
         text_format = QTextCharFormat()
         text_format.setFontPointSize(font_size)
@@ -1001,19 +1005,22 @@ class PopUpTaskDetail(QDialog):
                 self.zoom_in()
             else:
                 self.zoom_out()
-            event.accept()
         super().wheelEvent(event)
 
-    def keyPressEvent(self, event):
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == 59:
-            self.zoom_in()
-        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Minus:
-            self.zoom_out()
-        super().keyPressEvent(event)
-
-    def accept(self):
-        self.parent.setPlainText(self.text_edit.toPlainText())
-        return super().accept()
+    def mouseDoubleClickEvent(self, event):
+        cursor = self.text_edit.cursorForPosition(event.pos())
+        selected_text = self.text_edit.document().findBlockByNumber(cursor.blockNumber()).text()
+        if re.match(r'^https?://[^\s]+', selected_text):
+            webbrowser.open(selected_text, new=1, autoraise=False)
+        if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
+            os.startfile(selected_text)
+        if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
+            os.startfile(selected_text)
+        if re.match(r'^(X|Y|Z):\\.*', selected_text):
+            os.startfile(selected_text)
+        if re.match(r'^/home/s145053/.*', selected_text):
+            self.parent.open_vscode(selected_text)
+        super().mouseDoubleClickEvent(event)
 
 class TaskDetail(QTextEdit):
     def __init__(self, parent=None):
@@ -1021,6 +1028,7 @@ class TaskDetail(QTextEdit):
         self.default_font_size = 10  
         self.button_size = (15, 15)
         self.init_ui()
+        self.setup_shortcuts()
 
     def init_ui(self):
         self.load_assets()
@@ -1043,11 +1051,15 @@ class TaskDetail(QTextEdit):
         self.popup_detail = PopUpTaskDetail(self)
         self.popup_detail.text_edit.setPlainText(self.toPlainText())
         self.popup_detail.text_edit.setFontPointSize(self.fontPointSize())
+        cursor = self.popup_detail.text_edit.textCursor()
+        cursor.setPosition(self.textCursor().position()) 
+        self.popup_detail.text_edit.setTextCursor(cursor)
         self.popup_detail.finished.connect(self.close_edit_dialog) 
         self.popup_detail.show()
         self.parent().hide()
 
     def close_edit_dialog(self):
+        self.setPlainText(self.popup_detail.text_edit.toPlainText())
         self.popup_detail = None
         self.parent().show()
 
@@ -1108,23 +1120,19 @@ class TaskDetail(QTextEdit):
         cursor.mergeCharFormat(text_format) 
         cursor.clearSelection() 
     
+    def setup_shortcuts(self):
+        zoomin_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Plus), self)
+        zoomin_shortcut.activated.connect(self.zoom_in)
+        zoomout_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Minus), self)
+        zoomout_shortcut.activated.connect(self.zoom_out)
+
     def wheelEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.angleDelta().y() > 0: 
                 self.zoom_in()
             else:
                 self.zoom_out()
-            event.accept()
         super().wheelEvent(event)
-
-    def keyPressEvent(self, event):
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == 59:
-            self.zoom_in()
-            event.accept()
-        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Minus:
-            self.zoom_out()
-            event.accept()
-        super().keyPressEvent(event)
 
     def resizeEvent(self, event):
         self.popup_button.move(self.width() - self.popup_button.width() - 5, 5)
@@ -1148,17 +1156,14 @@ class TaskDialog(QDialog):
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
         layout = QFormLayout()
-        self.checkpoint_content = {}
 
         self.task_name = QLineEdit(self)
         self.task_name.textChanged.connect(self.on_edit)
         layout.addRow("Task:", self.task_name)
-        self.checkpoint_content["Task"] = self.task_name.text()
 
         self.task_goal = QLineEdit(self)
         self.task_goal.textChanged.connect(self.on_edit)
         layout.addRow("Goal:", self.task_goal)
-        self.checkpoint_content["Goal"] = self.task_goal.text()
 
         deadline_layout = QHBoxLayout()
         self.task_deadline_date = QPushButton("", self)
@@ -1180,13 +1185,10 @@ class TaskDialog(QDialog):
         checkbox_layout.addWidget(self.task_type)
         deadline_layout.addLayout(checkbox_layout)
         layout.addRow("Deadline:", deadline_layout)
-        self.checkpoint_content["TaskType"] = self.task_type.currentText()
-        self.checkpoint_content["Deadline"] = self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None
 
         self.task_detail = TaskDetail(self)
         self.task_detail.textChanged.connect(self.on_edit)
         layout.addRow("Detail:", self.task_detail)
-        self.checkpoint_content["Detail"] = self.task_detail.toPlainText()
 
         self.status_combo = QComboBox(self)
         all_status = get_allstatus_form_db()
@@ -1195,7 +1197,6 @@ class TaskDialog(QDialog):
             self.status_combo.setItemData(index, status_id)
         self.status_combo.currentIndexChanged.connect(self.update_visibility)
         layout.addRow("Status:", self.status_combo)
-        self.checkpoint_content["Status"] = self.status_combo.currentText()
 
         self.waiting_input_label = QLabel("Waiting for:", self.status_combo)
         self.waiting_input_label.setVisible(False) 
@@ -1204,7 +1205,6 @@ class TaskDialog(QDialog):
         self.waiting_input.setPlaceholderText("What are you waiting for?")
         self.waiting_input.setVisible(False) 
         layout.addRow(self.waiting_input_label, self.waiting_input)
-        self.checkpoint_content["Waiting for"] = self.waiting_input.text()
 
         self.label_display_area = QScrollArea()
         self.label_display_area.setWidgetResizable(True)
@@ -1223,7 +1223,6 @@ class TaskDialog(QDialog):
         label_layout.addWidget(self.label_input)
         label_layout.addWidget(self.label_display_area)
         layout.addRow("Keywords:", label_layout)
-        self.checkpoint_content["Keywords"] = []
 
         remind_layout = QHBoxLayout()
         self.reminder = QCheckBox(self)
@@ -1234,12 +1233,10 @@ class TaskDialog(QDialog):
         self.remind_timer.dateTimeChanged.connect(self.on_edit)
         self.remind_timer.setDateTime(QDateTime(QDateTime.currentDateTime().date(), QTime(17, 45))) 
         self.remind_timer.setVisible(False)
-        self.checkpoint_content["Reminder date"] = self.remind_timer.text() if self.reminder.isChecked() else None
         remind_layout.addWidget(self.remind_timer) 
         self.remind_input = QLineEdit(self)
         self.remind_input.textChanged.connect(self.on_edit)
         self.remind_input.setVisible(False) 
-        self.checkpoint_content["Reminder input"] = self.remind_input.text() if self.reminder.isChecked() else None
         remind_layout.addWidget(self.remind_input) 
         layout.addRow("Reminder:", remind_layout)
 
@@ -1336,7 +1333,6 @@ class TaskDialog(QDialog):
         self.newlabels_id.append(label_id)
 
         self.on_edit()
-        self.checkpoint_content["Keywords"] += [label_id]
 
     def select_label(self, label_widget):
         if self.selected_label:
@@ -1366,7 +1362,6 @@ class TaskDialog(QDialog):
         label_widget.deleteLater() 
         self.selected_label = None
         self.on_edit()
-        self.checkpoint_content["Keywords"].remove(label_id)
 
     def post_task(self): 
         task_name = self.task_name.text()
@@ -1416,7 +1411,7 @@ class TaskDialog(QDialog):
 
     def update_task(self): 
         old_task_data = (
-            self.checkpoint_content["Task"], 
+            self.checkpoint_content["Name"], 
             self.checkpoint_content["Goal"],
             self.checkpoint_content["Detail"],
             self.checkpoint_content["Deadline"],
@@ -1425,7 +1420,7 @@ class TaskDialog(QDialog):
             self.checkpoint_content["Waiting for"],
             self.checkpoint_content["Reminder timer"],
             self.checkpoint_content["Reminder input"],
-            )
+        )
         old_task_labels_id = self.checkpoint_content["Keywords"]
 
         task_id = self.task_id
@@ -1500,35 +1495,28 @@ class TaskDialog(QDialog):
         self.setWindowTitle("Task*")
         self.is_edited = True
 
+    def get_form_content(self):
+        return {"Name": self.task_name.text(),
+                "Goal": self.task_goal.text(),
+                "Deadline": self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None,
+                "TaskType": self.task_type.currentText(),
+                "Detail": self.task_detail.toPlainText(),
+                "Status": self.status_combo.itemData(self.status_combo.currentIndex()) ,
+                "Waiting for": self.waiting_input.text(),
+                "Reminder timer": self.remind_timer.text() if self.reminder.isChecked() else None,
+                "Reminder input": self.remind_input.text() if self.reminder.isChecked() else None,
+                "Keywords": [label_id for _, label_id, _, _, _ in get_task2label_from_db(self.task_id)]}
+
     def start_new_editing(self):
-        self.checkpoint_content["Task"] = self.task_name.text()
-        self.checkpoint_content["Goal"] = self.task_goal.text()
-        self.checkpoint_content["Deadline"] = self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None
-        self.checkpoint_content["TaskType"] = self.task_type.currentText()
-        self.checkpoint_content["Detail"] = self.task_detail.toPlainText()
-        self.checkpoint_content["Status"] = self.status_combo.itemData(self.status_combo.currentIndex()) 
-        self.checkpoint_content["Waiting for"] = self.waiting_input.text()
-        self.checkpoint_content["Reminder timer"] = self.remind_timer.text() if self.reminder.isChecked() else None
-        self.checkpoint_content["Reminder input"] = self.remind_input.text() if self.reminder.isChecked() else None
-        self.checkpoint_content["Keywords"] =  [label_id for _, label_id, _, _, _ in get_task2label_from_db(self.task_id)]
         self.setWindowTitle("Task")
         self.is_edited = False
+        self.checkpoint_content = self.get_form_content()
 
     def check_edit_status(self):
         if self.is_edited:
-            current_content = {}
-            current_content["Task"] = self.task_name.text()
-            current_content["Goal"] = self.task_goal.text()
-            current_content["Deadline"] = self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None
-            current_content["TaskType"] = self.task_type.currentText()
-            current_content["Detail"] = self.task_detail.toPlainText()
-            current_content["Status"] = self.status_combo.itemData(self.status_combo.currentIndex()) 
-            current_content["Waiting for"] = self.waiting_input.text()
-            current_content["Reminder timer"] = self.remind_timer.text() if self.reminder.isChecked() else None
-            current_content["Reminder input"] = self.remind_input.text() if self.reminder.isChecked() else None
-            current_content["Keywords"] =  [label_id for _, label_id, _, _, _ in get_task2label_from_db(self.task_id)]
+            current_content = self.get_form_content()
             if (
-                self.checkpoint_content["Task"] == current_content["Task"] and
+                self.checkpoint_content["Name"] == current_content["Name"] and
                 self.checkpoint_content["Goal"] == current_content["Goal"] and
                 self.checkpoint_content["Deadline"] == current_content["Deadline"] and
                 self.checkpoint_content["TaskType"] == current_content["TaskType"] and
@@ -1545,6 +1533,7 @@ class TaskDialog(QDialog):
             msg_box.setWindowTitle("Confirmation")
             msg_box.setText("編集を破棄しますか？")
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
             result = msg_box.exec()
             if result == QMessageBox.StandardButton.Yes:
                 return False
