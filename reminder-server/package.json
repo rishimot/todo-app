@@ -1,0 +1,20 @@
+{
+  "name": "remind-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node.exe server.js --dbPath=C:\\Users\\S145053\\develop\\todo-app\\dist\\todo.db --port=3001",
+    "install-service": "winser -i -a",
+    "uninstall-service": "winser -r -x"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-notifier": "^10.0.1",
+    "sqlite3": "^5.1.7",
+    "winser": "^1.0.3"
+  }
+}
