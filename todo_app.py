@@ -48,6 +48,7 @@ from PyQt6.QtGui import(
     QCursor,
     QTextCursor,
     QTextCharFormat,
+    QTransform,
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -107,7 +108,7 @@ class DigitalTimer(QWidget):
         menu = QMenu()
         exit_action = menu.addAction("終了")
         exit_action.triggered.connect(self.close)
-        self.tray_icon = QSystemTrayIcon(QIcon("icon/dokuro_switch.ico"), self)
+        self.tray_icon = QSystemTrayIcon(QIcon("icon/start_button.ico"), self)
         self.tray_icon.setContextMenu(menu)
         self.tray_icon.show()
 
@@ -232,7 +233,7 @@ class TargetWidget(QLineEdit):
 class PopupTaskWindow(QDialog):
     def __init__(self, text, item, kanban_board):
         super().__init__()
-        self.setWindowIcon(QIcon("icon/dokuro_switch.ico"))
+        self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
         self.text = text[text.find("#") + 1:].strip().split(' ', 1)[1]
         self.kanban_board = kanban_board
@@ -240,6 +241,7 @@ class PopupTaskWindow(QDialog):
         self.item = item
         self.is_pinned = True
         self.pin_only = False
+        self.close_button_size = (15, 15)
         self.pin_size = (15, 15)
         self.pinwidget_size = (37, 37)
         self.load_assets()
@@ -249,12 +251,30 @@ class PopupTaskWindow(QDialog):
         self.setGeometry(0, 0, 200, 40)
 
         layout = QHBoxLayout()
+        button_layout = QVBoxLayout()
         self.pin = QLabel(self)
         self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
         self.pin.setFixedSize(*self.pin_size)
         self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pin.mousePressEvent = self.pin_clicked
-        layout.addWidget(self.pin)
+        button_layout.addWidget(self.pin)
+        self.close_button = QPushButton("x", self)
+        self.close_button.setFixedSize(*self.close_button_size)
+        self.close_button.setStyleSheet("""
+            QPushButton {
+                background-color: #A9A9A9;
+                font-size: 10px;
+                color: white;
+                border: none;
+                border-radius: 7;
+            }
+            QPushButton:hover {
+                background-color: darkred; 
+            }
+        """)
+        self.close_button.clicked.connect(self.close)
+        button_layout.addWidget(self.close_button)
+        layout.addLayout(button_layout)
 
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -372,6 +392,7 @@ class PopupTaskWindow(QDialog):
         super().leaveEvent(event)
 
     def enlarge_mode(self):
+        self.close_button.show()
         self.main_widget.show() 
         self.task_name.setText(self.text)
         self.target.show()
@@ -380,6 +401,7 @@ class PopupTaskWindow(QDialog):
         self.adjustSize()
 
     def small_mode(self):
+        self.close_button.hide()
         if self.target.text() != "":
             self.task_name.setText(self.target.text())
         self.target.hide()
@@ -389,6 +411,7 @@ class PopupTaskWindow(QDialog):
 
     def pinonly_mode(self):
         self.pin_only = True
+        self.close_button.hide()
         self.main_widget.hide() 
         self.setFixedSize(*self.pinwidget_size)
         self.adjustSize()
@@ -704,7 +727,7 @@ class KanbanBoard(QWidget):
                     return
 
     def init_ui(self):
-        self.setWindowIcon(QIcon("icon/dokuro_switch.ico"))
+        self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("TODO App")
         self.setGeometry(100, 100, 800, 600)
 
@@ -738,7 +761,7 @@ class KanbanBoard(QWidget):
         label = QLabel(title)
         layout.addWidget(label)
 
-        add_button = QPushButton("+")
+        add_button = QPushButton("+", self)
         add_button.clicked.connect(lambda: self.open_add_task_dialog(column))
         layout.addWidget(add_button)
 
@@ -957,70 +980,19 @@ class PopUpTaskDetail(QDialog):
         super().__init__()
         self.parent = parent
         self.init_ui()
-        self.setup_shortcuts()
     
     def init_ui(self):
         self.setGeometry(100, 100, 700, 500)
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle("Detail")
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint)
-        self.text_edit = QTextEdit(self)
+        self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint)
+        self.task_detail = TaskDetail(self)
+        self.task_detail.popup_button.setPixmap(self.task_detail.popdown_pixmap)
+        self.task_detail.popup_button.mousePressEvent = lambda event: self.accept()
         layout = QVBoxLayout(self)
-        layout.addWidget(self.text_edit)
+        layout.addWidget(self.task_detail)
         self.setLayout(layout)
-
-    def setup_shortcuts(self):
-        ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
-        ok_shortcut.activated.connect(self.accept)
-        cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        cancel_shortcut.activated.connect(self.reject)
-        zoomin_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Plus), self)
-        zoomin_shortcut.activated.connect(self.zoom_in)
-        zoomout_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Minus), self)
-        zoomout_shortcut.activated.connect(self.zoom_out)
-
-    def zoom_in(self):
-        current_font_size = self.text_edit.fontPointSize()
-        new_font_size = current_font_size + 1
-        self.text_edit.setFontPointSize(new_font_size)
-        self.set_all_text_font_size(new_font_size)
-
-    def zoom_out(self):
-        current_font_size = self.text_edit.fontPointSize()
-        new_font_size = max(current_font_size - 1, 1)
-        self.text_edit.setFontPointSize(new_font_size)
-        self.set_all_text_font_size(new_font_size)
-
-    def set_all_text_font_size(self, font_size):
-        cursor = QTextCursor(self.text_edit.document())
-        cursor.select(QTextCursor.SelectionType.Document)
-        text_format = QTextCharFormat()
-        text_format.setFontPointSize(font_size)
-        cursor.mergeCharFormat(text_format) 
-        cursor.clearSelection() 
-
-    def wheelEvent(self, event):
-        if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            if event.angleDelta().y() > 0: 
-                self.zoom_in()
-            else:
-                self.zoom_out()
-        super().wheelEvent(event)
-
-    def mouseDoubleClickEvent(self, event):
-        cursor = self.text_edit.cursorForPosition(event.pos())
-        selected_text = self.text_edit.document().findBlockByNumber(cursor.blockNumber()).text()
-        if re.match(r'^https?://[^\s]+', selected_text):
-            webbrowser.open(selected_text, new=1, autoraise=False)
-        if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^(X|Y|Z):\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^/home/s145053/.*', selected_text):
-            self.parent.open_vscode(selected_text)
-        super().mouseDoubleClickEvent(event)
 
 class TaskDetail(QTextEdit):
     def __init__(self, parent=None):
@@ -1028,7 +1000,6 @@ class TaskDetail(QTextEdit):
         self.default_font_size = 10  
         self.button_size = (15, 15)
         self.init_ui()
-        self.setup_shortcuts()
 
     def init_ui(self):
         self.load_assets()
@@ -1039,7 +1010,10 @@ class TaskDetail(QTextEdit):
         self.popup_button.move(self.width() - self.popup_button.width() - 15, 0) 
    
     def load_assets(self):
-        self.popup_pixmap = QPixmap("image/popup.png").scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        popup_pixmap = QPixmap("image/popup.png")
+        popdown_pixmap = popup_pixmap.transformed(QTransform().rotate(180))
+        self.popup_pixmap = popup_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        self.popdown_pixmap = popdown_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def createButton(self, pixmap):
         button = QLabel(self)
@@ -1049,17 +1023,19 @@ class TaskDetail(QTextEdit):
 
     def open_edit_dialog(self):
         self.popup_detail = PopUpTaskDetail(self)
-        self.popup_detail.text_edit.setPlainText(self.toPlainText())
-        self.popup_detail.text_edit.setFontPointSize(self.fontPointSize())
-        cursor = self.popup_detail.text_edit.textCursor()
+        self.popup_detail.task_detail.setPlainText(self.toPlainText())
+        self.popup_detail.task_detail.setFontPointSize(self.fontPointSize())
+        cursor = self.popup_detail.task_detail.textCursor()
         cursor.setPosition(self.textCursor().position()) 
-        self.popup_detail.text_edit.setTextCursor(cursor)
+        self.popup_detail.task_detail.setTextCursor(cursor)
         self.popup_detail.finished.connect(self.close_edit_dialog) 
         self.popup_detail.show()
         self.parent().hide()
 
     def close_edit_dialog(self):
-        self.setPlainText(self.popup_detail.text_edit.toPlainText())
+        self.setPlainText(self.popup_detail.task_detail.toPlainText())
+        if not self.parent().is_editing():
+            self.parent().start_new_editing()
         self.popup_detail = None
         self.parent().show()
 
@@ -1120,12 +1096,6 @@ class TaskDetail(QTextEdit):
         cursor.mergeCharFormat(text_format) 
         cursor.clearSelection() 
     
-    def setup_shortcuts(self):
-        zoomin_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Plus), self)
-        zoomin_shortcut.activated.connect(self.zoom_in)
-        zoomout_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Minus), self)
-        zoomout_shortcut.activated.connect(self.zoom_out)
-
     def wheelEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if event.angleDelta().y() > 0: 
@@ -1137,6 +1107,13 @@ class TaskDetail(QTextEdit):
     def resizeEvent(self, event):
         self.popup_button.move(self.width() - self.popup_button.width() - 5, 5)
         super().resizeEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == 59:
+            self.zoom_in()
+        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Minus:
+            self.zoom_out()
+        super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
     def __init__(self, parent=None, task_id=None):
@@ -1512,33 +1489,19 @@ class TaskDialog(QDialog):
         self.is_edited = False
         self.checkpoint_content = self.get_form_content()
 
+    def is_editing(self):
+        return self.checkpoint_content != self.get_form_content()
+
     def check_edit_status(self):
         if self.is_edited:
-            current_content = self.get_form_content()
-            if (
-                self.checkpoint_content["Name"] == current_content["Name"] and
-                self.checkpoint_content["Goal"] == current_content["Goal"] and
-                self.checkpoint_content["Deadline"] == current_content["Deadline"] and
-                self.checkpoint_content["TaskType"] == current_content["TaskType"] and
-                self.checkpoint_content["Detail"] == current_content["Detail"] and
-                self.checkpoint_content["Status"] == current_content["Status"] and
-                self.checkpoint_content["Waiting for"] == current_content["Waiting for"] and
-                self.checkpoint_content["Reminder timer"] == current_content["Reminder timer"] and
-                self.checkpoint_content["Reminder input"] == current_content["Reminder input"] and
-                self.checkpoint_content["Keywords"] == current_content["Keywords"] 
-            ):
+            if not self.is_editing():
                 return False
-
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Confirmation")
             msg_box.setText("編集を破棄しますか？")
             msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-            result = msg_box.exec()
-            if result == QMessageBox.StandardButton.Yes:
-                return False
-            elif result == QMessageBox.StandardButton.No:
-                return True
+            return msg_box.exec() == QMessageBox.StandardButton.No
         return False
 
     def closeEvent(self, event):
