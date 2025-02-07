@@ -231,10 +231,11 @@ class TargetWidget(QLineEdit):
         super().keyPressEvent(event)
 
 class PopupTaskWindow(QDialog):
-    def __init__(self, text, item, kanban_board):
+    def __init__(self, item, kanban_board):
         super().__init__()
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
+        text = item.text()
         self.text = text[text.find("#") + 1:].strip().split(' ', 1)[1]
         self.kanban_board = kanban_board
         self.start_pos = None
@@ -634,10 +635,9 @@ class KanbanColumn(QListWidget):
         super().focusOutEvent(event)
 
     def show_popup_item(self, item):
-        item_text = item.text()
         if self.popup_window:
             self.popup_window.close()
-        self.popup_window = PopupTaskWindow(item_text, item, self.parent)
+        self.popup_window = PopupTaskWindow(item, self.parent)
         self.popup_window.show()
         self.popup_window.task_timer.start_timer()
         self.parent.hide()
@@ -901,7 +901,7 @@ class KanbanBoard(QWidget):
             return
         old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_task_type, old_status_name, old_waiting_task, old_remind_date, old_remind_input = get_task_from_db(task_id)
         old_task2labels_id = get_task2label_from_db(task_id)
-        dialog = TaskDialog(self, task_id=task_id)
+        dialog = TaskDialog(self, item)
         dialog.task_name.setText(old_task_name)
         dialog.task_goal.setText(old_task_goal)
         dialog.task_detail.setPlainText(old_task_detail)
@@ -980,6 +980,7 @@ class PopUpTaskDetail(QDialog):
         super().__init__()
         self.parent = parent
         self.init_ui()
+        self.setup_shortcuts()
     
     def init_ui(self):
         self.setGeometry(100, 100, 700, 500)
@@ -993,6 +994,12 @@ class PopUpTaskDetail(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(self.task_detail)
         self.setLayout(layout)
+
+    def setup_shortcuts(self):
+        ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
+        ok_shortcut.activated.connect(self.accept)
+        n_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
+        n_shortcut.activated.connect(self.accept)
 
 class TaskDetail(QTextEdit):
     def __init__(self, parent=None):
@@ -1052,16 +1059,22 @@ class TaskDetail(QTextEdit):
     def mouseDoubleClickEvent(self, event):
         cursor = self.cursorForPosition(event.pos())
         selected_text = self.document().findBlockByNumber(cursor.blockNumber()).text()
-        if re.match(r'^https?://[^\s]+', selected_text):
-            webbrowser.open(selected_text, new=1, autoraise=False)
-        if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^(X|Y|Z):\\.*', selected_text):
-            os.startfile(selected_text)
-        if re.match(r'^/home/s145053/.*', selected_text):
-            self.open_vscode(selected_text)
+        try:
+            if re.match(r'^https?://[^\s]+', selected_text):
+                webbrowser.open(selected_text, new=1, autoraise=False)
+            if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
+                os.startfile(selected_text)
+            if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
+                os.startfile(selected_text)
+            if re.match(r'^(X|Y|Z):\\.*', selected_text):
+                os.startfile(selected_text)
+            if re.match(r'^/home/s145053/.*', selected_text):
+                self.open_vscode(selected_text)
+        except Exception as error:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Error")
+            msg_box.setText(f"{error}")
+            msg_box.exec()
         super().mouseDoubleClickEvent(event)
 
     def open_vscode(self, app_path):
@@ -1116,10 +1129,11 @@ class TaskDetail(QTextEdit):
         super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
-    def __init__(self, parent=None, task_id=None):
+    def __init__(self, kanban_board, item=None):
         super().__init__()
-        self.parent = parent
-        self.task_id = task_id
+        self.kanban_board = kanban_board
+        self.item = item
+        self.task_id = item.data(Qt.ItemDataRole.UserRole) if item else None
         self.newlabels_id = []
         self.selected_label = None
         self.is_edited = False
@@ -1362,7 +1376,7 @@ class TaskDialog(QDialog):
         assert result, "データベースの追加でエラー"
         task_id = result["taskId"]
         if result["type"] == "local":
-            self.parent.on_post_task({"taskId": task_id, "name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
+            self.kanban_board.on_post_task({"taskId": task_id, "name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
         self.task_id = task_id
         for label_id in newlabels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
@@ -1378,7 +1392,7 @@ class TaskDialog(QDialog):
         task2labels = get_task2label_from_db(task_id)
         task2labels_id = [task2label_id for task2label_id, _, _, _, _ in task2labels]
         labels_id = [label_id for _, label_id, _, _, _ in task2labels]
-        self.parent.action_history.record({
+        self.kanban_board.action_history.record({
             'type': 'add_task',
             'task_id': task_id,
             'task_data': task_data,
@@ -1419,12 +1433,12 @@ class TaskDialog(QDialog):
         result = update_task_in_db_by_api((task_id, *new_task_data))
         assert result, "データベースの更新でエラー"
         if result["type"] == "local":
-            self.parent.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
+            self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
         for label_id in self.newlabels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
         new_task2labels = get_task2label_from_db(self.task_id)
         new_task2labels_id = [task2label_id for task2label_id, _, _, _, _ in new_task2labels]
-        self.parent.action_history.record({
+        self.kanban_board.action_history.record({
             'type': 'edit_task',
             'task_id': task_id,
             'old_task_data': old_task_data, 
@@ -1446,26 +1460,28 @@ class TaskDialog(QDialog):
         to_database_shortcut.activated.connect(self.database_update)
         ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
         ok_shortcut.activated.connect(self.handle_accept)
-        popup_taskdetail_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
-        popup_taskdetail_shortcut.activated.connect(self.task_detail.open_edit_dialog)
         cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         cancel_shortcut.activated.connect(self.handle_reject)
+        popup_taskdetail_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
+        popup_taskdetail_shortcut.activated.connect(self.task_detail.open_edit_dialog)
+        popup_item_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_M), self)
+        popup_item_shortcut.activated.connect(self.show_popup_item)
 
     def handle_accept(self):
         self.add_label()
         self.database_update()
-        if self.parent is not None:
-            self.parent.focus_next_dialog(id(self))
-            del self.parent.taskid2dialogs[self.task_id]
+        if self.kanban_board is not None:
+            self.kanban_board.focus_next_dialog(id(self))
+            del self.kanban_board.taskid2dialogs[self.task_id]
         self.accept()
 
     def handle_reject(self):
-        is_continue = self.check_edit_status()
+        is_continue = self.is_continue_editing()
         if is_continue:
             return
-        if self.parent is not None:
-            self.parent.focus_next_dialog(id(self))
-            del self.parent.taskid2dialogs[self.task_id]
+        if self.kanban_board is not None:
+            self.kanban_board.focus_next_dialog(id(self))
+            del self.kanban_board.taskid2dialogs[self.task_id]
         self.reject() 
 
     def on_edit(self):
@@ -1492,7 +1508,7 @@ class TaskDialog(QDialog):
     def is_editing(self):
         return self.checkpoint_content != self.get_form_content()
 
-    def check_edit_status(self):
+    def is_continue_editing(self):
         if self.is_edited:
             if not self.is_editing():
                 return False
@@ -1504,13 +1520,22 @@ class TaskDialog(QDialog):
             return msg_box.exec() == QMessageBox.StandardButton.No
         return False
 
+    def show_popup_item(self):
+        if not self.item:
+            return
+        self.popup_window = PopupTaskWindow(self.item, self.kanban_board)
+        self.popup_window.show()
+        self.popup_window.task_timer.start_timer()
+        self.kanban_board.hide()
+        self.hide()
+
     def closeEvent(self, event):
-        is_continue = self.check_edit_status()
+        is_continue = self.is_continue_editing()
         if is_continue:
             event.ignore() 
-        if self.parent is not None:
-            self.parent.focus_next_dialog(id(self))
-            del self.parent.taskid2dialogs[self.task_id]
+        if self.kanban_board is not None:
+            self.kanban_board.focus_next_dialog(id(self))
+            del self.kanban_board.taskid2dialogs[self.task_id]
         event.accept()
 
     def show(self):
