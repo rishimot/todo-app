@@ -192,8 +192,6 @@ class DigitalTimer(QWidget):
         self.label.setText(f'/ {minutes:02}:{seconds:02}')
 
     def stop_timer(self):
-        self.start_button.setPixmap(self.saisei_pixmap)
-        self.start_button.mousePressEvent = lambda event: self.start_timer()
         self.timer.stop()
         if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
@@ -204,9 +202,11 @@ class DigitalTimer(QWidget):
                 QSystemTrayIcon.MessageIcon.Information,
                 1000
             )
-            self.label.mousePressEvent = lambda event: self.change_mode()
-            self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
-            self.start_time = None
+        self.start_button.setPixmap(self.saisei_pixmap)
+        self.start_button.mousePressEvent = lambda event: self.start_timer()
+        self.label.mousePressEvent = lambda event: self.change_mode()
+        self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
+        self.start_time = None
 
     def maximize(self):
         self.start_button.show()
@@ -1138,6 +1138,8 @@ class TaskDialog(QDialog):
         self.newlabels_id = []
         self.selected_label = None
         self.is_edited = False
+        self.button_size = (12, 12)
+        self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
     
@@ -1147,6 +1149,8 @@ class TaskDialog(QDialog):
         self.setGeometry(150, 100, 500, 550)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
+        popup_item_button = self.createButton(self.popup_pixmap, pushed_event = lambda event: self.show_popup_item())
+        popup_item_button.move(self.width() - popup_item_button.width() - 10, 0) 
         layout = QFormLayout()
 
         self.task_name = QLineEdit(self)
@@ -1250,6 +1254,17 @@ class TaskDialog(QDialog):
         layout.addRow(self.dialog_button)
 
         self.setLayout(layout)
+
+    def load_assets(self):
+        popup_pixmap = QPixmap("image/popup.png")
+        self.popup_pixmap = popup_pixmap.scaled(*self.button_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    def createButton(self, pixmap, pushed_event=None):
+        button = QLabel(self)
+        button.setMaximumSize(*self.button_size)
+        button.setPixmap(pixmap)
+        button.mousePressEvent = pushed_event
+        return button
 
     def toggle_remind_timer(self, state):
         if state == 2: 
