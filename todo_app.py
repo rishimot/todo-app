@@ -1232,15 +1232,15 @@ class TaskDialog(QDialog):
         remind_layout.addWidget(self.remind_input) 
         layout.addRow("Reminder:", remind_layout)
 
-        todays_time = 0
-        total_time = 0
+        todays_time_seconds = 0
+        total_time_seconds = 0
         if self.task_id:
             time_data = get_time_from_db(self.task_id)
             for _, end_date, duration in time_data:
-                if datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S") == datetime.datetime.now():
-                    todays_time += duration 
-                total_time += duration
-        total_time_label = QLabel(f"{todays_time//3600:02}:{todays_time%3600:02} / {total_time//3600:02}:{total_time%3600:02}", self)  
+                if datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S").date() == datetime.datetime.now().date():
+                    todays_time_seconds += duration 
+                total_time_seconds += duration
+        total_time_label = QLabel(f"{todays_time_seconds//3600:02}:{todays_time_seconds%3600//60:02} / {total_time_seconds//3600:02}:{total_time_seconds%3600//60:02}", self)  
         total_time_label.setStyleSheet("font-size: 13px;")
         layout.addRow("Today/Total:", total_time_label)
 
