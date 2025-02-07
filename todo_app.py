@@ -19,6 +19,7 @@ from utils import (
     get_label2task_from_db,
     get_alllabel_from_db,
     get_alltask2label_from_db,
+    get_time_from_db,
     add_task2label_in_db,
     add_task_to_db_by_api,
     add_time_to_db,
@@ -93,7 +94,7 @@ class DigitalTimer(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.label = QLabel(f'{self.setting_time}:00', self)
+        self.label = QLabel(f'/ {self.setting_time}:00', self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFixedHeight(30)
         self.label.mousePressEvent = lambda event: self.change_mode()
@@ -134,12 +135,12 @@ class DigitalTimer(QWidget):
         self.timer.timeout.disconnect()
         if self.mode == "CountDown":
             self.mode = "CountUp" 
-            self.label.setText(f'00:00')
+            self.label.setText(f'/ 00:00')
             self.timer.timeout.connect(self.update_countup_timer)
         elif self.mode == "CountUp":
             self.mode = "CountDown"
             self.setting_time = 30
-            self.label.setText(f'{self.setting_time:02}:00')
+            self.label.setText(f'/ {self.setting_time:02}:00')
             self.timer.timeout.connect(self.update_countdown_timer)
 
     def start_timer(self):
@@ -170,7 +171,7 @@ class DigitalTimer(QWidget):
         if self.time_elapsed >= 0:
             minutes = (self.time_elapsed % 3600) // 60
             seconds = self.time_elapsed % 60
-            self.label.setText(f'{minutes:02}:{seconds:02}')
+            self.label.setText(f'/ {minutes:02}:{seconds:02}')
             if self.time_elapsed == 0:
                 self.tray_icon.showMessage(
                     "Notification",
@@ -181,20 +182,20 @@ class DigitalTimer(QWidget):
         else:
             minutes = (-self.time_elapsed % 3600) // 60
             seconds = -self.time_elapsed % 60
-            self.label.setText(f'-{minutes:02}:{seconds:02}')
+            self.label.setText(f'/ -{minutes:02}:{seconds:02}')
 
     def update_countup_timer(self):
         self.duration_time += 1
         self.time_elapsed += 1
         minutes = (self.time_elapsed % 3600) // 60
         seconds = self.time_elapsed % 60
-        self.label.setText(f'{minutes:02}:{seconds:02}')
+        self.label.setText(f'/ {minutes:02}:{seconds:02}')
 
     def stop_timer(self):
         self.start_button.setPixmap(self.saisei_pixmap)
         self.start_button.mousePressEvent = lambda event: self.start_timer()
         self.timer.stop()
-        if self.duration_time >= 1:
+        if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
             add_time_to_db((self.start_time, end_time, self.duration_time, self.task_id))
             self.tray_icon.showMessage(
@@ -204,7 +205,7 @@ class DigitalTimer(QWidget):
                 1000
             )
             self.label.mousePressEvent = lambda event: self.change_mode()
-            self.label.setText(f'{self.setting_time:02}:00' if self.mode == "CountDown" else "00:00")
+            self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
             self.start_time = None
 
     def maximize(self):
@@ -1230,6 +1231,18 @@ class TaskDialog(QDialog):
         self.remind_input.setVisible(False) 
         remind_layout.addWidget(self.remind_input) 
         layout.addRow("Reminder:", remind_layout)
+
+        todays_time = 0
+        total_time = 0
+        if self.task_id:
+            time_data = get_time_from_db(self.task_id)
+            for _, end_date, duration in time_data:
+                if datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S") == datetime.datetime.now():
+                    todays_time += duration 
+                total_time += duration
+        total_time_label = QLabel(f"{todays_time//3600:02}:{todays_time%3600:02} / {total_time//3600:02}:{total_time%3600:02}", self)  
+        total_time_label.setStyleSheet("font-size: 13px;")
+        layout.addRow("Today/Total:", total_time_label)
 
         self.dialog_button= QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         self.dialog_button.accepted.connect(self.handle_accept)
