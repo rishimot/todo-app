@@ -236,16 +236,13 @@ class PopupTaskWindow(QDialog):
         super().__init__()
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
-        text = item.text()
-        self.text = text[text.find("#") + 1:].strip().split(' ', 1)[1]
+        text = item.text()[item.text().find("#") + 1:].strip().split(' ', 1)[1]
+        self.text = f"{text}"
         self.kanban_board = kanban_board
         self.item = item
         self.start_pos = None
-        self.is_pinned = True
-        self.pin_only = False
         self.close_button_size = (15, 15)
         self.pin_size = (15, 15)
-        self.pinwidget_size = (37, 37)
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
@@ -254,13 +251,15 @@ class PopupTaskWindow(QDialog):
         self.setGeometry(0, 0, 200, 40)
 
         layout = QHBoxLayout()
+
         button_layout = QVBoxLayout()
         self.pin = QLabel(self)
-        self.pin.setPixmap(self.pin_red_pixmap if self.is_pinned else self.pin_white_pixmap)
+        self.pin.setPixmap(self.pin_red_pixmap)
         self.pin.setFixedSize(*self.pin_size)
         self.pin.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.pin.mousePressEvent = self.pin_clicked
         button_layout.addWidget(self.pin)
+
         self.close_button = QPushButton("x", self)
         self.close_button.setFixedSize(*self.close_button_size)
         self.close_button.setStyleSheet("""
@@ -277,7 +276,10 @@ class PopupTaskWindow(QDialog):
         """)
         self.close_button.clicked.connect(self.close)
         button_layout.addWidget(self.close_button)
-        layout.addLayout(button_layout)
+
+        self.button_widget = QWidget()
+        self.button_widget.setLayout(button_layout)
+        layout.addWidget(self.button_widget)
 
         main_layout = QHBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -296,13 +298,9 @@ class PopupTaskWindow(QDialog):
         self.main_widget = QWidget()
         self.main_widget.setLayout(main_layout)
         layout.addWidget(self.main_widget)
+
         self.setLayout(layout)
-
-        window_flags = self.windowType()
-        window_flags |= Qt.WindowType.FramelessWindowHint
-        window_flags |= Qt.WindowType.WindowStaysOnTopHint 
-        self.setWindowFlags(window_flags)
-
+        self.setWindowFlags(self.windowType() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.adjustSize()
         self.original_size = (self.width(), self.height())
         self.small_mode()
@@ -337,14 +335,8 @@ class PopupTaskWindow(QDialog):
         close_shortcut.activated.connect(self.close)
 
     def pin_clicked(self, event):
-        self.is_pinned = not self.is_pinned
-        if self.is_pinned:
-            self.pin.setPixmap(self.pin_red_pixmap)
-            self.unlock_pinonly_mode()
-            self.enlarge_mode()
-        else:
-            self.pin.setPixmap(self.pin_white_pixmap)
-        self.show()
+        self.hide()
+        QTimer.singleShot(3000, self.show) 
 
     def mouseDoubleClickEvent(self, event):
         task_dialog = self.kanban_board.open_edit_task_dialog(self.item)
@@ -388,20 +380,16 @@ class PopupTaskWindow(QDialog):
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event):
-        if self.is_pinned:
-            self.enlarge_mode()
-        else:
-            self.pinonly_mode()
+        self.enlarge_mode()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if (not self.target.hasFocus()) and (not self.pin_only):
+        if (not self.target.hasFocus()):
             self.small_mode()
         super().leaveEvent(event)
 
     def enlarge_mode(self):
-        self.close_button.show()
-        self.main_widget.show() 
+        self.button_widget.show()
         self.task_name.setText(self.text)
         self.target.show()
         self.task_timer.maximize()
@@ -409,7 +397,7 @@ class PopupTaskWindow(QDialog):
         self.adjustSize()
 
     def small_mode(self):
-        self.close_button.hide()
+        self.button_widget.hide()
         if self.target.text() != "":
             self.task_name.setText(self.target.text())
         self.target.hide()
@@ -417,26 +405,14 @@ class PopupTaskWindow(QDialog):
         self.setFixedHeight(35)
         self.adjustSize()
 
-    def pinonly_mode(self):
-        self.pin_only = True
-        self.close_button.hide()
-        self.main_widget.hide() 
-        self.setFixedSize(*self.pinwidget_size)
-        self.adjustSize()
-        QTimer.singleShot(3000, self.unlock_pinonly_mode) 
-
-    def unlock_pinonly_mode(self):
-        self.pin_only = False
-        self.main_widget.show() 
-        self.setFixedSize(*self.original_size)
-        self.adjustSize()
-        self.small_mode()
-
     def closeEvent(self, event):
         if self.task_timer.is_timer_running():
             self.task_timer.stop_timer()
         self.kanban_board.popup_window = None
         event.accept()
+
+    def get_taskid(self):
+        return self.item.data(Qt.ItemDataRole.UserRole) 
 
     def show(self):
         super().show()
@@ -617,6 +593,7 @@ class KanbanColumn(QListWidget):
             selected_items = self.selectedItems()
             if len(selected_items) > 0:
                 self.show_popup_item(selected_items[0])
+                self.kanban_board.hide()
         super().keyPressEvent(event)
 
     def delete_selected_item(self):
@@ -646,11 +623,15 @@ class KanbanColumn(QListWidget):
         super().focusOutEvent(event)
 
     def show_popup_item(self, item):
+        popup_task_window = PopupTaskWindow(item, self.kanban_board)
         if self.kanban_board.popup_window:
-            self.kanban_board.popup_window.close()
-        self.kanban_board.popup_window = PopupTaskWindow(item, self.kanban_board)
-        self.kanban_board.popup_window.show()
-        self.kanban_board.hide()
+            if popup_task_window.get_taskid() == self.kanban_board.popup_window.get_taskid():
+                self.kanban_board.popup_window.raise_()
+                return
+            else:
+                self.kanban_board.popup_window.close()
+        popup_task_window.show()
+        self.kanban_board.popup_window = popup_task_window
 
     def mouseMoveEvent(self, event):
         if event.type() == QEvent.Type.MouseMove:
@@ -740,7 +721,7 @@ class KanbanBoard(QWidget):
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("TODO App")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(150, 100, 1200, 700)
 
         todo_column = KanbanColumn("TODO", self)
         doing_column = KanbanColumn("DOING", self)
@@ -960,6 +941,8 @@ class KanbanBoard(QWidget):
                 item = column.current_item
                 if item:
                     column.show_popup_item(item)
+                    self.hide()
+                    return
         super().keyPressEvent(event)
 
     def delete_unused_label(self):
@@ -1095,6 +1078,8 @@ class TaskDetail(QTextEdit):
                 os.startfile(selected_text)
             if re.match(r'^/home/s145053/.*', selected_text):
                 self.open_vscode(selected_text)
+            if re.match(r'^onenote:///C:\\Users\\S145053\\*', selected_text):
+                os.startfile(selected_text)
         except Exception as error:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Error")
@@ -1149,8 +1134,12 @@ class TaskDetail(QTextEdit):
     def keyPressEvent(self, event):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == 59:
             self.zoom_in()
-        elif event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Minus:
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Minus:
             self.zoom_out()
+        if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_V:
+            clipboard_text = QApplication.clipboard().text()
+            self.insertPlainText(clipboard_text)  
+            return
         super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
@@ -1578,10 +1567,17 @@ class TaskDialog(QDialog):
     def show_popup_item(self):
         if not self.item:
             return
+        self.hide()
+        self.kanban_board.hide()
+        popup_task_window = PopupTaskWindow(self.item, self.kanban_board)
         if self.kanban_board.popup_window:
-            self.kanban_board.popup_window.close()
-        self.kanban_board.popup_window = PopupTaskWindow(self.item, self.kanban_board)
-        self.kanban_board.popup_window.show()
+            if popup_task_window.get_taskid() == self.kanban_board.popup_window.get_taskid():
+                self.kanban_board.popup_window.raise_()
+                return
+            else:
+                self.kanban_board.popup_window.close()
+        popup_task_window.show()
+        self.kanban_board.popup_window = popup_task_window
         if  self.status_combo.currentText() != "DOING":
             tmp_editing_status = (self.windowTitle(), self.is_edited)
             self.status_combo.setCurrentText("DOING")
@@ -1603,8 +1599,6 @@ class TaskDialog(QDialog):
             if result["type"] == "local":
                 self.kanban_board.on_update_task(self.task_id, {"name": self.checkpoint_content["name"], "goal": self.checkpoint_content["goal"], "detail": self.checkpoint_content["detail"], "deadline": self.checkpoint_content["deadline"], "task_type": self.checkpoint_content["task_type"], "status_name": "TODO", "waiting_task": self.checkpoint_content["waiting_task"], "remind_date": self.checkpoint_content["remind_date"], "remind_input": self.checkpoint_content["remind_input"]})
             self.checkpoint_content["status_id"] = self.status_combo.itemData(self.status_combo.currentIndex())
-        self.hide()
-        self.kanban_board.hide()
 
     def closeEvent(self, event):
         is_continue = self.is_continue_editing()
