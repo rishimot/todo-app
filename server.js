@@ -42,12 +42,19 @@ function set_reminder(taskId, taskName, time, message) {
         return;
     }
     if (taskId in reminder) {
-        clearTimeout(reminder[taskId]);
+        clear_reminder(taskId);
     }
     const timerId = setTimeout(() => {
         sio.emit('notification', {taskName, message});
     }, timeout);
     reminder[taskId] = timerId;
+}
+
+function clear_reminder(taskId) {
+    if (taskId in reminder) {
+        clearTimeout(reminder[taskId]);
+        delete reminder[taskId];
+    }
 }
 
 app.get('/api/task', async (req, res) => {
@@ -101,10 +108,15 @@ app.patch('/api/task/:id', async (req, res) => {
         return res.status(400).json({ message: 'タスクを正しく指定してください。' });
     }
     try {
-        set_reminder(taskId, name, remind_date, remind_input);
         await dbGet('update task set name = ?, goal = ?, detail = ?, deadline = ?,  task_type = ?, status_id = ?, waiting_task = ?, remind_date = ?, remind_input = ? where id = ?',  name, goal, detail, deadline, task_type, status_id, waiting_task, remind_date, remind_input, taskId);
         const status = await dbGet(`select name from status where id = ?`, status_id);
         const status_name = status["name"]
+        if (status_name == "DONE") {
+            clear_reminder(taskId, remind_date);
+        }
+        else {
+            set_reminder(taskId, name, remind_date, remind_input);
+        }
         sio.emit('update', taskId, { name, goal, detail, deadline, task_type, status_name, waiting_task, remind_date, remind_input });
         return res.status(200).json({ taskId: taskId });
     } catch (error) {
@@ -127,8 +139,7 @@ app.delete('/api/task/:id', async (req, res) => {
             return res.status(400).json({ message: "The task doesn't exist" });
         }
         if (taskId in reminder) {
-            clearTimeout(reminder[taskId]);
-            delete reminder[taskId];
+            clear_reminder(taskId);
         }
         await dbRun('delete from task where id = ?', taskId);
         sio.emit('delete', taskId);

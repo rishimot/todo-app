@@ -87,6 +87,7 @@ class DigitalTimer(QWidget):
         self.mode = "CountDown"
         self.start_time = None
         self.end_time = None
+        self.timer_running = False
         self.time_format = "%Y/%m/%d %H:%M:%S"
         self.load_assets()
         self.init_ui()
@@ -130,7 +131,7 @@ class DigitalTimer(QWidget):
         return button
 
     def is_timer_running(self):
-        return self.start_time is not None
+        return self.timer_running
 
     def change_mode(self):
         self.timer.timeout.disconnect()
@@ -149,6 +150,7 @@ class DigitalTimer(QWidget):
             self.start_time = datetime.datetime.now().strftime(self.time_format)
         self.time_elapsed = self.setting_time * 60 if self.mode == "CountDown" else 0
         self.duration_time = 0
+        self.timer_running = True
         self.timer.start(1000) 
         self.label.mousePressEvent = lambda event: self.pause_timer()
         self.start_button.setPixmap(self.teishi_pixmap)
@@ -158,9 +160,11 @@ class DigitalTimer(QWidget):
         self.start_button.setPixmap(self.saisei_pixmap)
         self.start_button.mousePressEvent = lambda event: self.resume_timer()
         self.label.mousePressEvent = lambda event: self.resume_timer()
+        self.timer_running = False
         self.timer.stop()
 
     def resume_timer(self):
+        self.timer_running = True
         self.timer.start(1000) 
         self.start_button.mousePressEvent = lambda event: self.stop_timer()
         self.start_button.setPixmap(self.teishi_pixmap)
@@ -193,6 +197,7 @@ class DigitalTimer(QWidget):
         self.label.setText(f'/ {minutes:02}:{seconds:02}')
 
     def stop_timer(self):
+        self.timer_running = False
         self.timer.stop()
         if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
@@ -246,7 +251,7 @@ class PopupTaskWindow(QDialog):
         self.pin_size = (15, 15)
         self.load_assets()
         self.init_ui()
-        #self.setup_shortcuts()
+        self.setup_shortcuts()
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 40)
@@ -298,9 +303,11 @@ class PopupTaskWindow(QDialog):
 
         self.main_widget = QWidget()
         self.main_widget.setLayout(main_layout)
+        self.main_widget.setStyleSheet("QWidget { color: yellow; }")
         layout.addWidget(self.main_widget)
 
         self.setLayout(layout)
+        self.setStyleSheet("QDialog { background-color: black; }")
         self.setWindowFlags(self.windowType() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
         self.adjustSize()
         self.original_size = (self.width(), self.height())
@@ -313,7 +320,7 @@ class PopupTaskWindow(QDialog):
         self.pin_white_pixmap = pin_white_pixmap.scaled(*self.pin_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
 
     def keyPressEvent(self, event: QMouseEvent):
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Escape:
             return
         if event.key() == Qt.Key.Key_N and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             if not self.kanban_board:
@@ -387,7 +394,7 @@ class PopupTaskWindow(QDialog):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if (not self.target.hasFocus()):
+        if not self.target.hasFocus() and self.task_timer.is_timer_running():
             self.small_mode()
         super().leaveEvent(event)
 
@@ -1262,7 +1269,7 @@ class TaskDialog(QDialog):
         total_time_seconds = 0
         if self.task_id:
             time_data = get_time_from_db(self.task_id)
-            for _, end_date, duration in time_data:
+            for _, _, end_date, duration in time_data:
                 if datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S").date() == datetime.datetime.now().date():
                     todays_time_seconds += duration 
                 total_time_seconds += duration

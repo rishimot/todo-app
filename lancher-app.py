@@ -89,7 +89,7 @@ def main():
     app = QApplication(sys.argv)
     lancher_app = LancherTaskDialog()
 
-    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL_ALT, VK_SPACE):
+    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL, VK_SPACE):
         print("ホットキーの登録に失敗しました")
         sys.exit(-1)
 

@@ -182,7 +182,7 @@ def get_task2label_by_label_id_from_db(label_id):
 def get_time_from_db(task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT start_time, end_time, duration FROM time WHERE time.task_id = ?", (task_id, ))
+    cursor.execute("SELECT id, start_time, end_time, duration FROM time WHERE time.task_id = ?", (task_id, ))
     time_data = cursor.fetchall()
     conn.close()
     return time_data
@@ -334,7 +334,7 @@ def delete_task_from_db_by_api(task_id):
     for task2label_id, _, _, _, _ in all_task2labels:
         delete_task2label_from_db(task2label_id)
     all_time = get_time_from_db(task_id)
-    for time_id, _, _, _, _ in all_time:
+    for time_id, _, _, _ in all_time:
         delete_time_from_db(time_id)
     return result
 
