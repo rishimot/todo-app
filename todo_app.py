@@ -1,4 +1,5 @@
 import os
+import urllib.parse
 import subprocess
 import sys
 import pickle
@@ -245,7 +246,7 @@ class PopupTaskWindow(QDialog):
         self.pin_size = (15, 15)
         self.load_assets()
         self.init_ui()
-        self.setup_shortcuts()
+        #self.setup_shortcuts()
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 40)
@@ -345,7 +346,9 @@ class PopupTaskWindow(QDialog):
     
     def check_doing_task(self):
         task_id = self.item.data(Qt.ItemDataRole.UserRole)
-        _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
+        new_task_name, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
+        if self.task_name.text() != new_task_name:
+            self.task_name.setText(new_task_name)
         if new_status_name != "DOING":
             self.close()
 
@@ -405,18 +408,15 @@ class PopupTaskWindow(QDialog):
         self.setFixedHeight(35)
         self.adjustSize()
 
+    def get_taskid(self):
+        return self.item.data(Qt.ItemDataRole.UserRole) 
+
     def closeEvent(self, event):
         if self.task_timer.is_timer_running():
             self.task_timer.stop_timer()
         self.kanban_board.popup_window = None
+        self.kanban_board.show()
         event.accept()
-
-    def get_taskid(self):
-        return self.item.data(Qt.ItemDataRole.UserRole) 
-
-    def show(self):
-        super().show()
-        self.task_timer.start_timer()
 
 class SearchBox(QLineEdit):
     def __init__(self, parent=None):
@@ -631,6 +631,7 @@ class KanbanColumn(QListWidget):
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
+        popup_task_window.task_timer.start_timer()
         self.kanban_board.popup_window = popup_task_window
 
     def mouseMoveEvent(self, event):
@@ -1074,6 +1075,8 @@ class TaskDetail(QTextEdit):
                 os.startfile(selected_text)
             if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
                 os.startfile(selected_text)
+            if re.match(r'^file:///C:/Users/S145053/*', selected_text):
+                webbrowser.open(urllib.parse.unquote(selected_text))
             if re.match(r'^(X|Y|Z):\\.*', selected_text):
                 os.startfile(selected_text)
             if re.match(r'^/home/s145053/.*', selected_text):
@@ -1143,7 +1146,7 @@ class TaskDetail(QTextEdit):
         super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
-    def __init__(self, kanban_board, item=None):
+    def __init__(self, kanban_board=None, item=None):
         super().__init__()
         self.kanban_board = kanban_board
         self.item = item
@@ -1511,7 +1514,7 @@ class TaskDialog(QDialog):
         self.add_label()
         self.database_update()
         self.kanban_board.focus_next_dialog(id(self))
-        if self.task_id:
+        if self.item:
             del self.kanban_board.taskid2dialogs[self.task_id]
         self.accept()
 
@@ -1567,7 +1570,6 @@ class TaskDialog(QDialog):
     def show_popup_item(self):
         if not self.item:
             return
-        self.hide()
         self.kanban_board.hide()
         popup_task_window = PopupTaskWindow(self.item, self.kanban_board)
         if self.kanban_board.popup_window:
@@ -1577,6 +1579,7 @@ class TaskDialog(QDialog):
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
+        popup_task_window.task_timer.start_timer()
         self.kanban_board.popup_window = popup_task_window
         if  self.status_combo.currentText() != "DOING":
             tmp_editing_status = (self.windowTitle(), self.is_edited)

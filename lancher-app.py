@@ -1,7 +1,7 @@
 import sys
 import ctypes
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QApplication
 from utils import add_task_to_db_by_api, add_task2label_in_db
 from todo_app import TaskDialog
@@ -25,10 +25,11 @@ class LancherTaskDialog(TaskDialog):
     def __init__(self):
         super().__init__()
         self.setWindowIcon(QIcon("icon/space_rocket.ico"))  
-        self.setWindowTitle("Lancher Task")
+        self.setWindowTitle("Task")
 
     def toggle_window(self):
         if self.isHidden():
+            self.start_new_editing()
             self.show()
             self.activateWindow()
             self.raise_()
@@ -36,12 +37,6 @@ class LancherTaskDialog(TaskDialog):
         else:
             self.hide()
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
-            self.clear_input()
-            return
-        super().keyPressEvent(event)
-    
     def post_task(self): 
         task_name = self.task_name.text()
         task_goal = self.task_goal.text()
@@ -71,10 +66,20 @@ class LancherTaskDialog(TaskDialog):
         self.accept()
 
     def handle_reject(self):
+        is_continue = self.is_continue_editing()
+        if is_continue:
+            return
         self.clear_input()
         self.reject()
 
+    def closeEvent(self, event):
+        is_continue = self.is_continue_editing()
+        if is_continue:
+            event.ignore() 
+        self.clear_input()
+
     def clear_input(self):
+        self.hide()
         self.task_name.clear()
         self.task_goal.clear()
         self.task_detail.clear()
@@ -92,13 +97,12 @@ class LancherTaskDialog(TaskDialog):
         self.reminder.setChecked(False)
         self.remind_timer.clear()
         self.remind_input.clear()
-        self.hide()
 
 def main():
     app = QApplication(sys.argv)
     lancher_app = LancherTaskDialog()
 
-    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL, VK_SPACE):
+    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL_ALT, VK_SPACE):
         print("ホットキーの登録に失敗しました")
         sys.exit(-1)
 
