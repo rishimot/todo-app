@@ -1146,7 +1146,7 @@ class TaskDetail(QTextEdit):
         super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
-    def __init__(self, kanban_board=None, item=None):
+    def __init__(self, kanban_board, item=None):
         super().__init__()
         self.kanban_board = kanban_board
         self.item = item
@@ -1499,8 +1499,8 @@ class TaskDialog(QDialog):
             self.post_task()
 
     def setup_shortcuts(self):
-        to_database_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
-        to_database_shortcut.activated.connect(self.database_update)
+        self.to_database_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
+        self.to_database_shortcut.activated.connect(self.database_update)
         ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
         ok_shortcut.activated.connect(self.handle_accept)
         cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)

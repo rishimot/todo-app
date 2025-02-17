@@ -7,6 +7,7 @@ from utils import add_task_to_db_by_api, add_task2label_in_db
 from todo_app import TaskDialog
 from ctypes import wintypes
 import win32con
+from todo_app import KanbanBoard
 
 HOTKEY_ID = 1  
 MOD_CTRL_ALT = win32con.MOD_CONTROL | win32con.MOD_ALT
@@ -23,9 +24,8 @@ class MSG(ctypes.Structure):
 
 class LancherTaskDialog(TaskDialog):
     def __init__(self):
-        super().__init__()
+        super().__init__(kanban_board=KanbanBoard())
         self.setWindowIcon(QIcon("icon/space_rocket.ico"))  
-        self.setWindowTitle("Task")
 
     def toggle_window(self):
         if self.isHidden():
@@ -37,49 +37,36 @@ class LancherTaskDialog(TaskDialog):
         else:
             self.hide()
 
+    def setup_shortcuts(self):
+        super().setup_shortcuts()
+        self.to_database_shortcut.activated.disconnect()
+        self.to_database_shortcut.activated.connect(self.post_task)
+
     def post_task(self): 
-        task_name = self.task_name.text()
-        task_goal = self.task_goal.text()
-        task_detail = self.task_detail.toPlainText()
-        task_deadline_date = self.task_deadline_date.text()
-        task_deadline = None 
-        if task_deadline_date != "":
-            task_deadline_time = self.task_deadline_time.text()
-            task_deadline = task_deadline_date + " " + task_deadline_time
-        task_type = self.task_type.currentText()
-        status_id = self.status_combo.itemData(self.status_combo.currentIndex())
-        waiting_task = self.waiting_input.text()
-        has_reminder = self.reminder.isChecked()
-        remind_date = self.remind_timer.text() if has_reminder else None
-        remind_input = self.remind_input.text() if has_reminder else None
-        result = add_task_to_db_by_api((task_name, task_goal, task_detail, task_deadline, task_type, status_id, waiting_task, remind_date, remind_input))
-        assert result, "データベースの追加に失敗しました。"
-        task_id = result["taskId"]
-        labels_id = self.newlabels_id
-        for label_id in labels_id:
-            add_task2label_in_db(task_id=task_id, label_id=label_id)
+        super().post_task()
+        self.clear_input()
+        self.start_new_editing()
     
     def handle_accept(self):
         self.add_label()
         self.post_task()
-        self.clear_input()
-        self.accept()
+        self.hide()
 
     def handle_reject(self):
         is_continue = self.is_continue_editing()
         if is_continue:
             return
+        self.hide()
         self.clear_input()
-        self.reject()
 
     def closeEvent(self, event):
         is_continue = self.is_continue_editing()
         if is_continue:
             event.ignore() 
+        self.hide()
         self.clear_input()
 
     def clear_input(self):
-        self.hide()
         self.task_name.clear()
         self.task_goal.clear()
         self.task_detail.clear()
@@ -102,7 +89,7 @@ def main():
     app = QApplication(sys.argv)
     lancher_app = LancherTaskDialog()
 
-    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL, VK_SPACE):
+    if not ctypes.windll.user32.RegisterHotKey(None, HOTKEY_ID, MOD_CTRL_ALT, VK_SPACE):
         print("ホットキーの登録に失敗しました")
         sys.exit(-1)
 
