@@ -13,3 +13,4 @@ build_exe.bat
 __pycache__/
 python_node_version.txt
 *.pkl
+*.db
