@@ -242,8 +242,7 @@ class PopupTaskWindow(QDialog):
         super().__init__()
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
-        text = item.text()[item.text().find("#") + 1:].strip().split(' ', 1)[1]
-        self.text = f"{text}"
+        self.text = item.text()[item.text().find("#") + 1:].strip().split(' ', 1)[1]
         self.kanban_board = kanban_board
         self.item = item
         self.start_pos = None
@@ -281,6 +280,7 @@ class PopupTaskWindow(QDialog):
             }
         """)
         self.close_button.clicked.connect(self.close)
+        self.close_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button_layout.addWidget(self.close_button)
 
         self.button_widget = QWidget()
@@ -355,6 +355,7 @@ class PopupTaskWindow(QDialog):
         task_id = self.item.data(Qt.ItemDataRole.UserRole)
         new_task_name, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
         if self.task_name.text() != new_task_name:
+            self.text = new_task_name
             self.task_name.setText(new_task_name)
         if new_status_name != "DOING":
             self.close()
@@ -780,7 +781,7 @@ class KanbanBoard(QWidget):
             if ((task_type == "daily") or (status_name == "DONE" and task_type != "-")) and task_deadline_date and datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
                 new_deadline = task_deadline_date
                 if task_type == "daily":
-                    new_deadline = datetime.datetime.now().strftime("%Y/%m/%d 17:45") 
+                    new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(days=1)).strftime("%Y/%m/%d %H:%M") 
                 elif task_type == "weekly":
                     new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d %H:%M") 
                 elif task_type == "monthly":
@@ -1066,19 +1067,20 @@ class TaskDetail(QTextEdit):
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             cursor = self.cursorForPosition(event.pos())
             selected_text = self.document().findBlockByNumber(cursor.blockNumber()).text()
-            if re.match(r'https?://[^\s]+', selected_text):
-                webbrowser.open(selected_text, new=1, autoraise=False)
-            if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\20_GroupShare\\映像Gr\\.*', selected_text):
-                os.startfile(selected_text)
+            self.open_link(selected_text)
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         cursor = self.cursorForPosition(event.pos())
         selected_text = self.document().findBlockByNumber(cursor.blockNumber()).text()
+        self.open_link(selected_text)
+        super().mouseDoubleClickEvent(event)
+
+    def open_link(self, selected_text):
         try:
             if re.match(r'^https?://[^\s]+', selected_text):
                 webbrowser.open(selected_text, new=1, autoraise=False)
-            if re.match(r'^\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
+            if re.match(r'^(file://)?\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
                 os.startfile(selected_text)
             if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
                 os.startfile(selected_text)
@@ -1095,7 +1097,6 @@ class TaskDetail(QTextEdit):
             msg_box.setWindowTitle("Error")
             msg_box.setText(f"{error}")
             msg_box.exec()
-        super().mouseDoubleClickEvent(event)
 
     def open_vscode(self, app_path):
         try:
