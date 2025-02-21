@@ -248,9 +248,25 @@ class PopupTaskWindow(QDialog):
         self.start_pos = None
         self.close_button_size = (15, 15)
         self.pin_size = (15, 15)
+        self.connect_server()
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
+
+    def connect_server(self):
+        self.sio = socketio.Client()
+        try:
+            self.sio.on('update', self.on_update_task)
+            self.sio.connect(f'{SERVER_URL}')
+            print(f"Connection Success")
+        except Exception as e:
+            print(f"Connection failed: {e}")
+
+    def on_update_task(self, task_id, new_task_data): 
+        if task_id != self.get_taskid():
+            return
+        self.text = new_task_data['name']
+        self.task_name.setText(new_task_data['name'])
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 40)
@@ -352,11 +368,8 @@ class PopupTaskWindow(QDialog):
         super().mouseDoubleClickEvent(event)
     
     def check_doing_task(self):
-        task_id = self.item.data(Qt.ItemDataRole.UserRole)
-        new_task_name, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
-        if self.task_name.text() != new_task_name:
-            self.text = new_task_name
-            self.task_name.setText(new_task_name)
+        task_id = self.get_taskid()
+        _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
         if new_status_name != "DOING":
             self.close()
 
@@ -420,10 +433,12 @@ class PopupTaskWindow(QDialog):
         return self.item.data(Qt.ItemDataRole.UserRole) 
 
     def closeEvent(self, event):
-        if self.task_timer.is_timer_running():
+        if self.task_timer.start_time:
             self.task_timer.stop_timer()
         self.kanban_board.popup_window = None
         self.kanban_board.show()
+        self.kanban_board.raise_()
+        self.kanban_board.activateWindow()
         event.accept()
 
 class SearchBox(QLineEdit):
@@ -1082,14 +1097,20 @@ class TaskDetail(QTextEdit):
                 webbrowser.open(selected_text, new=1, autoraise=False)
             if re.match(r'^(file://)?\\\\ssfs-2md01\.jp\.sharp\\046-0002-ＳＥＰセンター共有\\.*', selected_text):
                 os.startfile(selected_text)
-            if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
-                os.startfile(selected_text)
             if re.match(r'^file:///C:/Users/S145053/*', selected_text):
                 webbrowser.open(urllib.parse.unquote(selected_text))
+            if re.match(r'^C:\\Users\\S145053\\.*', selected_text):
+                os.startfile(selected_text)
             if re.match(r'^(X|Y|Z):\\.*', selected_text):
                 os.startfile(selected_text)
-            if re.match(r'^/home/s145053/.*', selected_text):
-                self.open_vscode(selected_text)
+            if re.match(r'^code /(home|work00|work01)/s145053/.*', selected_text):
+                app_path = selected_text.split(" ")[1]
+                self.open_vscode(app_path)
+            """
+            if re.match(r'^cd /(home|work00|work01)/s145053/.*', selected_text):
+                remote_directory = selected_text.split(" ")[1]
+                self.open_remote_folder(remote_directory)
+            """
             if re.match(r'^onenote:///C:\\Users\\S145053\\*', selected_text):
                 os.startfile(selected_text)
         except Exception as error:
@@ -1098,17 +1119,23 @@ class TaskDetail(QTextEdit):
             msg_box.setText(f"{error}")
             msg_box.exec()
 
+    def open_remote_folder(self, remote_directory):
+        command = [
+            "powershell",
+            "-Command",
+            "ssh s145053@c1x",
+            f"cd {remote_directory}",
+        ]
+        subprocess.Popen(command)
+
     def open_vscode(self, app_path):
-        try:
-            command = [
-                "C:\\Users\\S145053\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
-                "--remote",
-                "ssh-remote+c1x",
-                app_path,
-            ]
-            subprocess.Popen(command)
-        except Exception as e:
-            print(f"Could not open {app_path}: {e}")
+        command = [
+            "C:\\Users\\S145053\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
+            "--remote",
+            "ssh-remote+c1x",
+            app_path,
+        ]
+        subprocess.Popen(command)
 
     def zoom_in(self):
         current_font_size = self.fontPointSize()
@@ -1164,10 +1191,54 @@ class TaskDialog(QDialog):
         self.is_edited = False
         self.button_size = (15, 15)
         self.checkpoint_content = None
+        #self.connect_server()
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
     
+    def connect_server(self):
+        self.sio = socketio.Client()
+        try:
+            self.sio.on('update', self.on_update_task)
+            self.sio.connect(f'{SERVER_URL}')
+            print(f"Connection Success")
+        except Exception as e:
+            print(f"Connection failed: {e}")
+
+    def on_update_task(self, task_id, new_task_data): 
+        if not self.task_id or task_id != self.task_id:
+            return
+        if self.is_form_changed():
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Confirmation")
+            msg_box.setText("変更が加えられました。編集を上書きしますか？")
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            if msg_box.exec() == QMessageBox.StandardButton.No:
+                return
+        new_task_name, new_task_goal, new_task_detail, new_task_deadline, new_task_type, new_status_name, new_waiting_task, new_remind_date, new_remind_input = (new_task_data['name'], new_task_data['goal'], new_task_data['detail'], new_task_data['deadline'],  new_task_data['task_type'], new_task_data['status_name'], new_task_data['waiting_task'], new_task_data['remind_date'], new_task_data['remind_input'])
+        old_task2labels_id = get_task2label_from_db(task_id)
+        self.task_name.setText(new_task_name)
+        self.task_goal.setText(new_task_goal)
+        self.task_detail.setPlainText(new_task_detail)
+        if new_task_deadline:
+            new_task_deadline_date = new_task_deadline.split(" ")[0]
+            new_task_deadline_time = new_task_deadline.split(" ")[1]
+            new_task_deadline_hour = int(new_task_deadline_time.split(":")[0])
+            new_task_deadline_minutes = int(new_task_deadline_time.split(":")[1])
+            self.task_deadline_date.setText(new_task_deadline_date)
+            self.task_deadline_time.setTime(QTime(new_task_deadline_hour, new_task_deadline_minutes))
+        self.task_type.setCurrentText(new_task_type)
+        self.status_combo.setCurrentText(new_status_name) 
+        self.waiting_input.setText(new_waiting_task)
+        if new_remind_date:
+            new_remind_date = datetime.datetime.strptime(new_remind_date, "%Y/%m/%d %H:%M")
+            self.reminder.setChecked(True)
+            self.remind_timer.setDateTime(QDateTime(new_remind_date.date(), new_remind_date.time())) 
+            self.remind_input.setText(new_remind_input)
+        self.display_labels(old_task2labels_id)
+        self.start_new_editing()
+
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle("Task")
@@ -1267,16 +1338,24 @@ class TaskDialog(QDialog):
         layout.addRow("Reminder:", remind_layout)
 
         todays_time_seconds = 0
+        weekly_time_seconds = 0
         total_time_seconds = 0
         if self.task_id:
             time_data = get_time_from_db(self.task_id)
+            today = datetime.datetime.now().date()
+            week_start_date = today - datetime.timedelta(weeks=1)
             for _, _, end_date, duration in time_data:
-                if datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S").date() == datetime.datetime.now().date():
+                end_date_dt = datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S").date()
+
+                if end_date_dt == today:
                     todays_time_seconds += duration 
+                if week_start_date <= end_date_dt <= today:
+                    weekly_time_seconds += duration
                 total_time_seconds += duration
-        total_time_label = QLabel(f"{todays_time_seconds//3600:02}:{todays_time_seconds%3600//60:02} / {total_time_seconds//3600:02}:{total_time_seconds%3600//60:02}", self)  
+
+        total_time_label = QLabel(f"{todays_time_seconds//3600:02}:{todays_time_seconds%3600//60:02} / {weekly_time_seconds//3600:02}:{weekly_time_seconds%3600//60:02} / {total_time_seconds//3600:02}:{total_time_seconds%3600//60:02}", self)  
         total_time_label.setStyleSheet("font-size: 13px;")
-        layout.addRow("Today/Total:", total_time_label)
+        layout.addRow("D/W/ALL:", total_time_label)
 
         self.dialog_button= QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         self.dialog_button.accepted.connect(self.handle_accept)
