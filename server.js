@@ -33,7 +33,7 @@ app.use(express.json());
 
 const MAX_TIMEOUT = 2 ** 31 - 1;
 const reminder = {};
-function set_reminder(taskId, taskName, time, message) {
+function set_reminder(task_id, name, time, message) {
     if (!time) return;
     const reminderTime = Date.parse(time);
     const now = Date.now();
@@ -41,19 +41,19 @@ function set_reminder(taskId, taskName, time, message) {
     if (timeout < 0 || MAX_TIMEOUT <= timeout) {
         return;
     }
-    if (taskId in reminder) {
-        clear_reminder(taskId);
+    if (task_id in reminder) {
+        clear_reminder(task_id);
     }
     const timerId = setTimeout(() => {
-        sio.emit('notification', {taskName, message});
+        sio.emit('notification', {name, message});
     }, timeout);
-    reminder[taskId] = timerId;
+    reminder[task_id] = timerId;
 }
 
-function clear_reminder(taskId) {
-    if (taskId in reminder) {
-        clearTimeout(reminder[taskId]);
-        delete reminder[taskId];
+function clear_reminder(task_id) {
+    if (task_id in reminder) {
+        clearTimeout(reminder[task_id]);
+        delete reminder[task_id];
     }
 }
 
@@ -94,7 +94,7 @@ app.post('/api/task', (req, res) => {
                     return res.status(401);
                 }
                 const status_name = row["name"];
-                sio.emit('post', {taskId, name, goal, detail, deadline, task_type, status_name, waiting_task, remind_date, remind_input});
+                sio.emit('post_task', {taskId, name, goal, detail, deadline, task_type, status_name, waiting_task, remind_date, remind_input});
                 return res.status(200).json({ taskId: taskId });
             });
         });
@@ -117,7 +117,7 @@ app.patch('/api/task/:id', async (req, res) => {
         else {
             set_reminder(taskId, name, remind_date, remind_input);
         }
-        sio.emit('update', taskId, { name, goal, detail, deadline, task_type, status_name, waiting_task, remind_date, remind_input });
+        sio.emit('update_task', taskId, { name, goal, detail, deadline, task_type, status_name, waiting_task, remind_date, remind_input });
         return res.status(200).json({ taskId: taskId });
     } catch (error) {
         console.log(error);
@@ -142,8 +142,116 @@ app.delete('/api/task/:id', async (req, res) => {
             clear_reminder(taskId);
         }
         await dbRun('delete from task where id = ?', taskId);
-        sio.emit('delete', taskId);
+        sio.emit('delete_task', taskId);
         return res.status(200).json({ deletedTask: taskId });
+    } catch (error) {
+        return res.status(401).json({ message: "An error occurred", error });
+    }
+});
+
+app.post('/api/action', (req, res) => {
+    const { name, goal, detail,  deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id } = req.body;
+    db.serialize(() => {
+        db.run('insert into action (name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',  [name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id], function(err) {
+            if (err) {
+                return res.status(401);
+            }
+            const actionId = this.lastID;
+            if (remind_date) {
+                set_reminder(task_id, name, remind_date, remind_input);
+            }
+            db.get('select name from status where id = ?', [status_id], (err, row) => {
+                if (err) {
+                    return res.status(401);
+                }
+                const status_name = row["name"];
+                sio.emit('post_action', {actionId, name, goal, detail, deadline, action_type, status_name, waiting_action, remind_date, remind_input, task_id});
+                return res.status(200).json({ actionId: actionId });
+            });
+        });
+    });
+});
+
+app.patch('/api/action/:id', async (req, res) => {
+    const actionId = parseInt(req.params.id);
+    const { name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id } = req.body;
+    if (!name) {
+        return res.status(400).json({ message: 'タスクを正しく指定してください。' });
+    }
+    try {
+        await dbGet('update action set name = ?, goal = ?, detail = ?, deadline = ?,  action_type = ?, status_id = ?, waiting_action = ?, remind_date = ?, remind_input = ?, task_id = ? where id = ?',  name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id, actionId);
+        const status = await dbGet(`select name from status where id = ?`, status_id);
+        const status_name = status["name"]
+        if (status_name == "DONE") {
+            clear_reminder(task_id, remind_date);
+        }
+        else {
+            set_reminder(task_id, name, remind_date, remind_input);
+        }
+        sio.emit('update_action', actionId, { name, goal, detail, deadline, action_type, status_name, waiting_action, remind_date, remind_input, task_id });
+        return res.status(200).json({ actionId: actionId });
+    } catch (error) {
+        console.log(error);
+        return res.status(401).json({ message: "An error occurred", error });
+    }
+});
+
+app.delete('/api/action/:id', async (req, res) => {
+    const actionId = parseInt(req.params.id);
+    try {
+        const action_data = await dbGet(
+            `select action.id, action.name, action.goal, action.detail, action.deadline, action.action_type, action.status_id, action.waiting_action, action.remind_date, action.remind_input, action.task_id
+             from action
+             where action.id = ?`,
+             actionId
+        );
+        if (!action_data) {
+            return res.status(400).json({ message: "The task doesn't exist" });
+        }
+        if (action_data["task_id"] in reminder) {
+            clear_reminder(action_data["task_id"]);
+        }
+        await dbRun('delete from action where id = ?', actionId);
+        sio.emit('delete_action', actionId);
+        return res.status(200).json({ deletedAction: actionId });
+    } catch (error) {
+        return res.status(401).json({ message: "An error occurred", error });
+    }
+});
+
+app.post('/api/time', (req, res) => {
+    const { start_time, end_time, duration, task_id } = req.body;
+    db.serialize(() => {
+        db.run('insert into time (start_time, end_time, duration, task_id) values (?, ?, ?, ?)',  [start_time, end_time, duration, task_id], function(err) {
+            if (err) {
+                return res.status(401);
+            }
+            const timeId = this.lastID;
+            sio.emit('post_time', timeId, req.body);
+            return res.status(200).json({ timeId: timeId });
+        });
+    });
+});
+
+app.patch('/api/time/:id', async (req, res) => {
+    const timeId = parseInt(req.params.id);
+    const { start_time, end_time, duration, task_id } = req.body;
+    try {
+        await dbGet('update time set start_time = ?, end_time = ?, duration = ?,  task_id = ? where id = ?',  start_time, end_time, duration, task_id, timeId);
+        sio.emit('update_time', task_id, req.body);
+        return res.status(200).json({ taskId: task_id });
+    } catch (error) {
+        console.log(error);
+        return res.status(401).json({ message: "An error occurred", error });
+    }
+});
+
+app.delete('/api/time/:id', async (req, res) => {
+    const timeId = parseInt(req.params.id);
+    try {
+        await dbRun('delete from time where id = ?', timeId);
+        sio.emit('delete_time', timeId);
+        return res.status(200).json({ deletedTask: timeId });
     } catch (error) {
         return res.status(401).json({ message: "An error occurred", error });
     }
@@ -155,7 +263,7 @@ sio.on('connection', (socket) => {
     });
 });
 
-server.listen(port, async() => {
+async function init_task_reminder() {
     try {
         const tasks = await dbAll(
             `select task.id, task.name, status.name as status_name, task.waiting_task, task.remind_date, task.remind_input
@@ -176,5 +284,34 @@ server.listen(port, async() => {
     } catch (error) {
         console.log("An error occurred", error);
     }
+}
+
+async function init_action_reminder() {
+    try {
+        const actions = await dbAll(
+            `select action.id, action.name, status.name as status_name, action.waiting_action, action.remind_date, action.remind_input, action.task_id
+            from action
+            INNER JOIN status ON action.status_id = status.id
+            `
+        );
+        for (const action of actions) {
+            const actionId = action.id;
+            const taskId = action.task_id;
+            const action_name = action.name;
+            const status_name = action.status_name;
+            const date = action.remind_date;
+            const message = action.remind_input;
+            if (date && status_name !== "DONE") {
+                set_reminder(taskId, action_name, date, message);
+            }
+        }
+    } catch (error) {
+        console.log("An error occurred", error);
+    }
+}
+
+server.listen(port, async() => {
+    await init_task_reminder();
+    await init_action_reminder();
     console.log(`Server is running at http://localhost:${port}`);
 });

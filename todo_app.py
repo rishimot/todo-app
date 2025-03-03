@@ -13,22 +13,36 @@ from utils import (
     get_allstatus_form_db,
     get_status_by_name_from_db,
     get_task_from_db,
+    get_pin_by_taskid_from_db,
+    get_action_from_db,
     get_alltask_from_db,
+    get_alllabel_by_taskid_from_db,
+    get_alllabel_by_actionid_from_db,
+    get_allaction_from_db,
+    get_allaction_by_taskid_from_db,
     get_label_by_name_from_db,
-    get_task2label_from_db,
-    get_task2label_by_label_id_from_db,
+    get_action2label_from_db,
+    get_action2label_by_actionid_from_db,
+    get_action2label_by_labelid_from_db,
+    get_task2label_by_taskid_from_db,
+    get_task2label_by_labelid_from_db,
     get_label2task_from_db,
-    get_alllabel_from_db,
-    get_alltask2label_from_db,
-    get_time_from_db,
+    get_time_by_taskid_from_db,
     add_task2label_in_db,
+    add_action2label_in_db,
     add_task_to_db_by_api,
-    add_time_to_db,
+    add_action_to_db_by_api,
+    add_time_to_db_by_api,
     add_label_to_db,
     update_task_in_db_by_api,
+    update_action_in_db_by_api,
+    update_pin_to_db,
     delete_label_in_db,
     delete_task2label_from_db,
+    delete_task2label_by_labelname_from_db,
+    delete_action2label_from_db,
     delete_task_from_db_by_api,
+    delete_action_from_db_by_api,
     SERVER_URL,
 )
 from PyQt6.QtCore import (
@@ -51,6 +65,7 @@ from PyQt6.QtGui import(
     QTextCursor,
     QTextCharFormat,
     QTransform,
+    QFont
 ) 
 from PyQt6.QtWidgets import (
     QApplication,
@@ -76,19 +91,23 @@ from PyQt6.QtWidgets import (
     QTimeEdit,
     QDateTimeEdit,
     QMessageBox,
+    QTableWidget,
+    QTableWidgetItem,
 )
 
 class DigitalTimer(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, task_id=None):
         super().__init__(parent)
-        self.task_id = self.parent().item.data(Qt.ItemDataRole.UserRole)
+        self.task_id = task_id
+        self.action_id = ""
         self.setting_time = 30
         self.button_size = (25, 25)
         self.mode = "CountDown"
         self.start_time = None
         self.end_time = None
+        self.break_time = False
         self.timer_running = False
-        self.time_format = "%Y/%m/%d %H:%M:%S"
+        self.time_format = "%Y/%m/%d %H:%M"
         self.load_assets()
         self.init_ui()
 
@@ -141,14 +160,14 @@ class DigitalTimer(QWidget):
             self.timer.timeout.connect(self.update_countup_timer)
         elif self.mode == "CountUp":
             self.mode = "CountDown"
-            self.setting_time = 30
             self.label.setText(f'/ {self.setting_time:02}:00')
             self.timer.timeout.connect(self.update_countdown_timer)
 
-    def start_timer(self):
+    def start_timer(self, time=None):
+        time = self.setting_time if time is None else time
         if not self.is_timer_running():
             self.start_time = datetime.datetime.now().strftime(self.time_format)
-        self.time_elapsed = self.setting_time * 60 if self.mode == "CountDown" else 0
+        self.time_elapsed = time * 60 if self.mode == "CountDown" else 0
         self.duration_time = 0
         self.timer_running = True
         self.timer.start(1000) 
@@ -184,6 +203,8 @@ class DigitalTimer(QWidget):
                     QSystemTrayIcon.MessageIcon.Information,
                     1000
                 )
+                if self.break_time:
+                    self.stop_timer()
         else:
             minutes = (-self.time_elapsed % 3600) // 60
             seconds = -self.time_elapsed % 60
@@ -199,20 +220,26 @@ class DigitalTimer(QWidget):
     def stop_timer(self):
         self.timer_running = False
         self.timer.stop()
+        self.start_button.setPixmap(self.saisei_pixmap)
+        self.start_button.mousePressEvent = lambda event: self.start_timer()
+        self.label.mousePressEvent = lambda event: self.change_mode()
         if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
-            add_time_to_db((self.start_time, end_time, self.duration_time, self.task_id))
+            if not self.break_time:
+                add_time_to_db_by_api((self.start_time, end_time, self.duration_time, self.task_id))
             self.tray_icon.showMessage(
                 "Notification",
                 f"{self.duration_time // 60}分{self.duration_time % 60}秒が経ちました",
                 QSystemTrayIcon.MessageIcon.Information,
                 1000
             )
-        self.start_button.setPixmap(self.saisei_pixmap)
-        self.start_button.mousePressEvent = lambda event: self.start_timer()
-        self.label.mousePressEvent = lambda event: self.change_mode()
-        self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
+            self.break_time = not self.break_time
         self.start_time = None
+        if self.break_time and self.mode == "CountDown":
+            self.label.setText(f'/ 5:00')
+            self.start_timer(time=5)
+        else:
+            self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
 
     def maximize(self):
         self.start_button.show()
@@ -238,35 +265,54 @@ class TargetWidget(QLineEdit):
         super().keyPressEvent(event)
 
 class PopupTaskWindow(QDialog):
-    def __init__(self, item, kanban_board):
+    def __init__(self, item, kanban_board, task_id, task_type="todo"):
         super().__init__()
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
         self.text = item.text()[item.text().find("#") + 1:].strip().split(' ', 1)[1]
         self.kanban_board = kanban_board
         self.item = item
+        self.task_id = task_id 
         self.start_pos = None
         self.close_button_size = (15, 15)
         self.pin_size = (15, 15)
-        self.connect_server()
+        self.connect_server(task_type=task_type)
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
 
-    def connect_server(self):
+    def connect_server(self, task_type):
         self.sio = socketio.Client()
         try:
-            self.sio.on('update', self.on_update_task)
+            if task_type == "todo":
+                self.sio.on('update_task', self.on_update_task)
+            elif task_type == "action":
+                self.sio.on('update_action', self.on_update_action)
+
             self.sio.connect(f'{SERVER_URL}')
             print(f"Connection Success")
         except Exception as e:
             print(f"Connection failed: {e}")
 
-    def on_update_task(self, task_id, new_task_data): 
-        if task_id != self.get_taskid():
+    def on_update_action(self, updated_action_id, updated_action_data): 
+        if updated_action_id != self.item.data(Qt.ItemDataRole.UserRole):
             return
-        self.text = new_task_data['name']
-        self.task_name.setText(new_task_data['name'])
+        self.text = updated_action_data['name']
+        self.task_name.setText(updated_action_data['name'])
+        """
+        if updated_action_data["status_name"] != "DOING":
+            self.close()
+        """
+
+    def on_update_task(self, updated_task_id, updated_task_data): 
+        if updated_task_id != self.item.data(Qt.ItemDataRole.UserRole):
+            return
+        self.text = updated_task_data['name']
+        self.task_name.setText(updated_task_data['name'])
+        """
+        if updated_task_data["status_name"] != "DOING":
+            self.hide()
+        """
 
     def init_ui(self):
         self.setGeometry(0, 0, 200, 40)
@@ -314,7 +360,7 @@ class PopupTaskWindow(QDialog):
         self.task_layout.addWidget(self.target)
         main_layout.addLayout(self.task_layout)
 
-        self.task_timer = DigitalTimer(self)
+        self.task_timer = DigitalTimer(self, self.task_id)
         main_layout.addWidget(self.task_timer)
 
         self.main_widget = QWidget()
@@ -339,8 +385,6 @@ class PopupTaskWindow(QDialog):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Escape:
             return
         if event.key() == Qt.Key.Key_N and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            if not self.kanban_board:
-                self.kanban_board = KanbanBoard()
             if self.kanban_board.isHidden():
                 self.kanban_board.show()
             if self.kanban_board.isMinimized():
@@ -364,14 +408,16 @@ class PopupTaskWindow(QDialog):
 
     def mouseDoubleClickEvent(self, event):
         task_dialog = self.kanban_board.open_edit_task_dialog(self.item)
-        task_dialog.finished.connect(self.check_doing_task) 
+        #task_dialog.finished.connect(self.check_doing_task) 
         super().mouseDoubleClickEvent(event)
     
+    """
     def check_doing_task(self):
-        task_id = self.get_taskid()
+        task_id = self.get_id()
         _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
         if new_status_name != "DOING":
             self.close()
+    """
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -429,8 +475,8 @@ class PopupTaskWindow(QDialog):
         self.setFixedHeight(35)
         self.adjustSize()
 
-    def get_taskid(self):
-        return self.item.data(Qt.ItemDataRole.UserRole) 
+    def get_id(self):
+        return id(self)
 
     def closeEvent(self, event):
         if self.task_timer.start_time:
@@ -439,11 +485,12 @@ class PopupTaskWindow(QDialog):
         self.kanban_board.show()
         self.kanban_board.raise_()
         self.kanban_board.activateWindow()
-        event.accept()
+        return event.accept()
 
 class SearchBox(QLineEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.on_search = False
         self.init_ui()
 
     def init_ui(self):
@@ -460,64 +507,98 @@ class SearchBox(QLineEdit):
     def _filter_tag(self, tag, items):
         is_exclude = tag.startswith('!')
         search_label = tag[1:] if is_exclude else tag
-        label2task = get_label2task_from_db(search_label)
-        task_ids = [task_id for _, task_id, _ in label2task]
         for item in items:
             if item.isHidden():
                 continue
             task_id = item.data(Qt.ItemDataRole.UserRole) 
-            item.setHidden(not(is_exclude ^ (task_id in task_ids)))
+            labels = get_alllabel_by_taskid_from_db(task_id=task_id)
+            item.setHidden(not(is_exclude ^ any([label_name.find(search_label) != -1 for _, label_name, _, _ in labels])))
 
-    def filter_list(self, column):
+    def _filter_act(self, act, items):
+        if act.lower() == "off":
+            for item in items:
+                item.setHidden(True)
+        if act.lower() == "next":
+            first_item = None
+            for item in items:
+                if item.isHidden():
+                    continue
+                if not first_item:
+                    first_item = item
+                else:
+                    item.setHidden(True)
+
+    def filter(self, column):
         items = []
         for index in range(column.count()):
             item = column.item(index)
             item.setHidden(False)
             items.append(item)
 
-        search_text = self.text()
+        search_text = self.text().replace("　", " ")
         if search_text == "":
+            self.on_search = False
             return
+        self.on_search = True
         splitted_search_texts = search_text.split(' ')
         is_tag = False
+        is_act = False
+        tags = []
+        acts = []
+        words = []
         for splitted_search_text in splitted_search_texts:
             if splitted_search_text == "tag:":
                 is_tag = True
                 continue
+
+            if splitted_search_text == "act:":
+                is_act = True
+                continue
+
             if is_tag is False and splitted_search_text.startswith('tag:'):
-                self._filter_tag(splitted_search_text[4:], items)
+                tags.append(splitted_search_text[4:])
+                continue
+
+            if is_act is False and splitted_search_text.startswith('act:'):
+                acts.append(splitted_search_text[4:])
                 continue
 
             if is_tag:
-                self._filter_tag(splitted_search_text, items)
+                tags.append(splitted_search_text)
                 is_tag = False
+            elif is_act:
+                acts.append(splitted_search_text)
+                is_act = False
             else:
-                self._filter_word(splitted_search_text, items)
+                words.append(splitted_search_text)
+        for tag in tags:
+            self._filter_tag(tag, items)
+        for word in words:
+            self._filter_word(word, items)
+        for act in acts:
+            self._filter_act(act, items)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             if self.hasFocus():
                 self.clearFocus()
+        if event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self.setText("")
         super().keyPressEvent(event)
     
 class KanbanItem(QListWidgetItem):
-    def __init__(self, text, task_id):
+    def __init__(self, text, id):
         super().__init__(text)
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_detail)
         self.detail_label = None
-        self.task_id = task_id
-        self.setData(Qt.ItemDataRole.UserRole, task_id) 
+        self.id = id
+        self.setData(Qt.ItemDataRole.UserRole, id) 
     
     def show_detail(self):
         if self.detail_label is None:
-            task_name, _, _, deadline, _, status_name, waiting_task, _, _ = get_task_from_db(self.task_id)
-            content = f"{task_name}"
-            if deadline:
-                content += f"\n~{deadline}"
-            if status_name == "WAITING":
-                content += f"\nI'm waiting for... {waiting_task}"
+            content = self.get_content()
             self.detail_label = QLabel(content)
             self.detail_label.setWindowFlag(Qt.WindowType.ToolTip)
             self.detail_label.move(QCursor.pos() + QPoint(10, 10))
@@ -528,9 +609,15 @@ class KanbanItem(QListWidgetItem):
             self.detail_label.close()
             self.detail_label = None
     
+    def get_content(self):
+        raise NotImplementedError
+
 class KanbanColumn(QListWidget):
     def __init__(self, title, kanban_board=None):
         super().__init__()
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+        self.pinned_items = []
         self.kanban_board = kanban_board
         self.id, self.name = get_status_by_name_from_db(title)
         self.current_item = None
@@ -566,32 +653,12 @@ class KanbanColumn(QListWidget):
             self.insertItem(drop_row, item)
         else:
             item = event.source().currentItem()
+            task_id = item.data(Qt.ItemDataRole.UserRole) 
             event.source().takeItem(event.source().row(item))
             drop_item = self.itemAt(event.position().toPoint())
             drop_row = self.row(drop_item) if drop_item else self.count() 
             self.insertItem(drop_row, item)
-
-            task_id = item.data(Qt.ItemDataRole.UserRole) 
-            task_name, task_goal, task_detail, task_deadline_date, task_type, _, waiting_task, remind_date, remind_input = get_task_from_db(task_id)
-            new_task = (task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, self.id, waiting_task, remind_date, remind_input)
-            result = update_task_in_db_by_api(new_task)
-            assert result, "データベースの更新でエラー"
-            if result["type"] == "local":
-                self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline_date, "task_type": task_type, "status_name": self.name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
-            if self.name == "DONE":
-                complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
-                label = get_label_by_name_from_db(complete_date)
-                if label:
-                    label_id, _, _, _ = label
-                else:
-                    label_color = generate_random_color()
-                    label_id = add_label_to_db(complete_date, label_color)
-                add_task2label_in_db(task_id=task_id, label_id=label_id)
-            elif event.source().name == "DONE":
-                task2labels = get_task2label_from_db(task_id)
-                for task2label_id, _, label_name, _, _ in task2labels:
-                    if label_name.startswith("Done:"):
-                        delete_task2label_from_db(task2label_id)
+            self.move_selected_item(task_id, event.source())
 
         self.kanban_board.action_history.record({
             'type': 'move_task',
@@ -619,42 +686,28 @@ class KanbanColumn(QListWidget):
                 self.kanban_board.hide()
         super().keyPressEvent(event)
 
+    def move_selected_item(self, item, source_column):
+        raise NotImplementedError
+
     def delete_selected_item(self):
-        selected_items = self.selectedItems()
-        if selected_items:
-            for selected_item in selected_items:
-                task_id = selected_item.data(Qt.ItemDataRole.UserRole) 
-                (task_name, task_goal, task_detail, task_deadline, task_type, _, waiting_task, remind_date, remind_input) = get_task_from_db(task_id)
-                deleted_task2labels = get_task2label_from_db(task_id)
-                deleted_task2labels_id = [ task2label_id for task2label_id, _, _, _, _ in deleted_task2labels]
-                deleted_labels_id = [ labels_id for _, labels_id, _, _, _ in deleted_task2labels]
-                result = delete_task_from_db_by_api(task_id)
-                assert result, "データベースの削除でエラー"
-                if result["type"] == "local":
-                    self.kanban_board.on_delete_task(task_id)
-                self.kanban_board.action_history.record({
-                    'type': 'delete_task',
-                    'task_id': task_id,
-                    'task_data': (task_name, task_goal, task_detail, task_deadline, task_type, self.id, waiting_task, remind_date, remind_input),
-                    'labels_id': deleted_labels_id,
-                    'task2labels_id': deleted_task2labels_id
-                })
-            self.clearFocus()
+        raise NotImplementedError
 
     def focusOutEvent(self, event):
         self.clearSelection()
         super().focusOutEvent(event)
 
+    def get_popup_window(self, item):
+        raise NotImplementedError
+
     def show_popup_item(self, item):
-        popup_task_window = PopupTaskWindow(item, self.kanban_board)
+        popup_task_window = self.get_popup_window(item)
         if self.kanban_board.popup_window:
-            if popup_task_window.get_taskid() == self.kanban_board.popup_window.get_taskid():
+            if popup_task_window.get_id() == self.kanban_board.popup_window.get_id():
                 self.kanban_board.popup_window.raise_()
                 return
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
-        popup_task_window.task_timer.start_timer()
         self.kanban_board.popup_window = popup_task_window
 
     def mouseMoveEvent(self, event):
@@ -686,25 +739,341 @@ class KanbanColumn(QListWidget):
         self.clear_item_detail()
         super().leaveEvent(event)
     
+    def show_context_menu(self, position):
+        item = self.itemAt(position)
+        if item is None:
+            return 
+
+        menu = QMenu(self)
+        id_ = item.data(Qt.ItemDataRole.UserRole) 
+        pin_data = get_pin_by_taskid_from_db(id_)
+        (_, _, is_pinned) = pin_data
+        pin_action = menu.addAction("ピンを解除" if is_pinned else "ピン留め")
+        hidden_item_action = menu.addAction("非表示")
+        action = menu.exec(self.mapToGlobal(position))
+        if action == pin_action:
+            self.toggle_pin_item(item, pin_data)
+        elif action == hidden_item_action:
+            item.setHidden(True)
+        self.clearFocus()
+
+    def toggle_pin_item(self, item, pin_data):
+        (pin_id, id_, is_pinned) = pin_data
+        if is_pinned:
+            update_pin_to_db((pin_id, id_, False))
+            item.setText(item.text().replace("📌", "")) 
+            column = item.listWidget()
+            current_row = column.currentRow()
+            for row in range(current_row + 1, column.count()):
+                source_item = column.item(row)
+                source_item_text = source_item.text()
+                if not source_item_text.startswith("📌"):
+                    column.takeItem(column.row(item))
+                    column.insertItem(column.row(source_item), item)
+                    break
+        else:
+            update_pin_to_db((pin_id, id_, True))
+            item.setText(f"📌{item.text()} ")  
+            self.takeItem(self.row(item))
+            self.insertItem(0, item)  
+    
 class KanbanBoard(QWidget):
-    def __init__(self):
+    def __init__(self, window_title, column_class, order_of_items_file=None):
         super().__init__()
-        self.tasks_priority = {}
+        self.items_priority = {}
         self.dialogs = {}
-        self.taskid2dialogs = {}
+        self.id2dialogs = {}
+        self.id2item = {}
         self.action_history = ActionHistory(self)
         self.popup_window = None
-        self.init_ui()
+        self.window_title = window_title
+        self.order_of_items_file = f"pkl_files/{order_of_items_file}"
+        self.init_ui(column_class)
         self.load_tasks()
         self.setup_shortcuts()
         self.connect_server()
 
     def connect_server(self):
+        raise NotImplementedError
+
+    def init_ui(self, column_class):
+        self.setWindowIcon(QIcon("icon/start_button.ico"))
+        self.setWindowTitle(self.window_title)
+        self.setGeometry(80, 80, 1000, 700)
+
+        todo_column = column_class("TODO", self)
+        doing_column = column_class("DOING", self)
+        waiting_column = column_class("WAITING", self)
+        done_column = column_class("DONE", self)
+        self.columns = {
+            "TODO": todo_column,
+            "DOING": doing_column,
+            "WAITING": waiting_column,
+            "DONE": done_column,
+        }
+
+        todo_search_box = SearchBox(self)
+        doing_search_box = SearchBox(self)
+        waiting_search_box = SearchBox(self)
+        done_search_box = SearchBox(self)
+        self.search_boxes = {
+            "TODO": todo_search_box,
+            "DOING": doing_search_box,
+            "WAITING": waiting_search_box,
+            "DONE": done_search_box,
+        }
+
+        self.layout = QHBoxLayout()
+        self.layout.addWidget(self.create_column("TODO", todo_column, todo_search_box))
+        self.layout.addWidget(self.create_column("DOING", doing_column, doing_search_box))
+        self.layout.addWidget(self.create_column("WAITING", waiting_column, waiting_search_box))
+        self.layout.addWidget(self.create_column("DONE", done_column, done_search_box))
+        self.setLayout(self.layout)
+
+    def create_column(self, title, column, search_box):
+        column_widget = QWidget()
+        layout = QVBoxLayout()
+
+        label = QLabel(title)
+        layout.addWidget(label)
+
+        add_button = QPushButton("+", self)
+        add_button.clicked.connect(lambda: self.open_add_task_dialog(column.name))
+        layout.addWidget(add_button)
+
+        search_box.textChanged.connect(lambda: search_box.filter(column))
+        search_box.returnPressed.connect(lambda: search_box.filter(column))
+        layout.addWidget(search_box)
+
+        layout.addWidget(column)
+        column.itemDoubleClicked.connect(self.open_edit_task_dialog)  
+        column_widget.setLayout(layout)
+        return column_widget
+
+    def load_tasks(self):
+        self.load_items()
+        #self.sort_items_in_columns()
+
+    def load_items(self):
+        raise NotImplementedError
+
+    def remove_item_in_column(self, item):
+        column = item.listWidget()
+        column.takeItem(column.row(item))
+        return column
+
+    def insert_item_in_column(self, item):
+        target_id = item.data(Qt.ItemDataRole.UserRole) 
+        column = item.listWidget()
+        for i in range(column.count()): 
+            source_item = column.item(i)
+            source_id = source_item.data(Qt.ItemDataRole.UserRole) 
+            source_priority = self.items_priority[source_id]
+            target_priority = self.items_priority[target_id]
+            if source_priority < target_priority:
+                column.takeItem(column.row(item))
+                column.insertItem(column.row(source_item), item)
+                break
+            elif source_priority == target_priority:
+                if source_id < target_id:
+                    column.takeItem(column.row(item))
+                    column.insertItem(column.row(source_item), item)
+                    break
+        return column
+
+    def sort_items_in_columns(self):
+        if not self.order_of_items_file or not os.path.exists(self.order_of_items_file):
+            return
+        with open(self.order_of_items_file, 'rb') as f:
+            try:
+                self.item_orders = pickle.load(f)
+            except (pickle.UnpicklingError, EOFError):
+                return
+        for column_name, item_orders in self.item_orders.items(): 
+            column = self.columns[column_name]
+            for order in range(column.count()):
+                if order in item_orders:
+                    target_task_id = item_orders[order]
+                    for i in range(order, column.count()):
+                        source_item = column.item(i)
+                        source_task_id = source_item.data(Qt.ItemDataRole.UserRole) 
+                        if target_task_id == source_task_id:
+                            column.takeItem(column.row(source_item))
+                            column.insertItem(order, source_item)
+                            break
+
+    def get_color(self, deadline_date):
+        if deadline_date:
+            deadline_date = datetime.datetime.strptime(deadline_date, "%Y/%m/%d %H:%M")
+            now = datetime.datetime.now() 
+            weekdays_diff = count_weekdays(now, deadline_date)
+            if weekdays_diff <= 0:
+                color = QColor(0, 0, 0)
+            elif weekdays_diff <= 1:
+                color = QColor(255, 0, 0)
+            elif weekdays_diff <= 3:
+                color = QColor(255, 150, 0)
+            else:
+                color = QColor(0, 0, 255)
+        else:
+            color = QColor(0, 0, 255)
+        return color
+
+    def calc_priority(self, id_, deadline_date):
+        priority = 0
+        if deadline_date:
+            deadline_date_ = datetime.datetime.strptime(deadline_date, "%Y/%m/%d %H:%M")
+            now = datetime.datetime.now() 
+            weekdays_diff = count_weekdays(now, deadline_date_)
+            if weekdays_diff <= 0:
+                priority += float('inf')
+            elif weekdays_diff <= 1:
+                priority += 100
+            elif weekdays_diff <= 3:
+                priority += 10
+        self.items_priority[id_] = priority
+        return priority
+
+    def create_item(self, task):
+        raise NotImplementedError
+
+    def update_item(self, item, task):
+        raise NotImplementedError
+
+    def open_add_task_dialog(self, column_name):
+        raise NotImplementedError
+
+    def open_edit_task_dialog(self, item):
+        raise NotImplementedError
+
+    def setup_shortcuts(self):
+        undo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Z), self)
+        undo_shortcut.activated.connect(self.action_history.undo)
+        redo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Y), self)
+        redo_shortcut.activated.connect(self.action_history.redo)
+        close_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        close_shortcut.activated.connect(self.close)
+    
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            for column in self.columns.values():
+                item = column.current_item
+                if item:
+                    column.show_popup_item(item)
+                    self.hide()
+                    return
+        super().keyPressEvent(event)
+
+    def focus_next_dialog(self, dialog_id):
+        del self.dialogs[dialog_id]
+        if len(self.dialogs) > 0:
+            next_dialog = list(self.dialogs.values())[-1]
+            next_dialog.activateWindow()
+            next_dialog.raise_()
+
+    def save_item_orders(self):
+        if not self.order_of_items_file:
+            return
+        try:
+            with open(self.order_of_items_file, 'wb') as f:
+                self.item_orders = {}
+                for column in self.columns.values():
+                    item_order = {}
+                    for i in range(column.count()):
+                        item = column.item(i)
+                        task_id = item.data(Qt.ItemDataRole.UserRole) 
+                        item_order[i] = task_id
+                    self.item_orders[column.name] = item_order
+                pickle.dump(self.item_orders, f)
+        except:
+            return
+
+    def closeEvent(self, event):
+        for column in self.columns.values():
+            column.clear_item_detail()
+        self.save_item_orders()
+        self.sio.disconnect()
+        self.action_history.save()
+        return super().closeEvent(event)
+    
+class TodoItem(KanbanItem):
+    def __init__(self, text, task_id):
+        super().__init__(text, id=task_id)
+    
+    def get_content(self):
+        task_name, _, _, deadline, _, status_name, waiting_task, _, _ = get_task_from_db(self.id)
+        content = f"{task_name}"
+        if deadline:
+            content += f"\n~{deadline}"
+        if status_name == "WAITING":
+            content += f"\nI'm waiting for... {waiting_task}"
+        return content
+    
+class TodoColumn(KanbanColumn):
+    def move_selected_item(self, task_id, source_column):
+        task_name, task_goal, task_detail, task_deadline_date, task_type, _, waiting_task, remind_date, remind_input = get_task_from_db(task_id)
+        new_task = (task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, self.id, waiting_task, remind_date, remind_input)
+        result = update_task_in_db_by_api(new_task)
+        assert result, "データベースの更新でエラー"
+        if result["type"] == "local":
+            self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline_date, "task_type": task_type, "status_name": self.name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
+        if self.name == "DONE":
+            self.give_complete_label(task_id)
+        elif source_column.name == "DONE":
+            self.remove_complete_label(task_id)
+        
+    def delete_selected_item(self):
+        selected_items = self.selectedItems()
+        if selected_items:
+            for selected_item in selected_items:
+                task_id = selected_item.data(Qt.ItemDataRole.UserRole) 
+                (task_name, task_goal, task_detail, task_deadline, task_type, _, waiting_task, remind_date, remind_input) = get_task_from_db(task_id)
+                deleted_task2labels = get_task2label_by_taskid_from_db(task_id)
+                deleted_task2labels_id = [ task2label_id for task2label_id, _, _, _, _ in deleted_task2labels]
+                deleted_labels_id = [ labels_id for _, labels_id, _, _, _ in deleted_task2labels]
+                result = delete_task_from_db_by_api(task_id)
+                assert result, "データベースの削除でエラー"
+                if result["type"] == "local":
+                    self.kanban_board.on_delete_task(task_id)
+                self.kanban_board.action_history.record({
+                    'type': 'delete_task',
+                    'task_id': task_id,
+                    'task_data': (task_name, task_goal, task_detail, task_deadline, task_type, self.id, waiting_task, remind_date, remind_input),
+                    'labels_id': deleted_labels_id,
+                    'task2labels_id': deleted_task2labels_id
+                })
+            self.clearFocus()
+
+    def give_complete_label(self, task_id):
+        complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
+        label = get_label_by_name_from_db(complete_date)
+        if label:
+            label_id, _, _, _ = label
+        else:
+            label_color = generate_random_color()
+            label_id = add_label_to_db(complete_date, label_color)
+        add_task2label_in_db(task_id=task_id, label_id=label_id)
+
+    def remove_complete_label(self, task_id):
+        task2labels = get_task2label_by_taskid_from_db(task_id)
+        for task2label_id, _, label_name, _, _ in task2labels:
+            if label_name.startswith("Done:"):
+                delete_task2label_from_db(task2label_id)
+
+    def get_popup_window(self, item):
+        task_id = item.data(Qt.ItemDataRole.UserRole) 
+        return PopupTaskWindow(item, self.kanban_board, task_id=task_id)
+
+class TodoBoard(KanbanBoard):
+    def __init__(self):
+        super().__init__(window_title="TODO App", column_class=TodoColumn, order_of_items_file="order_of_items-TodoBoard.pkl")
+
+    def connect_server(self):
         self.sio = socketio.Client()
         try:
-            self.sio.on('post', self.on_post_task)
-            self.sio.on('update', self.on_update_task)
-            self.sio.on('delete', self.on_delete_task)
+            self.sio.on('post_task', self.on_post_task)
+            self.sio.on('update_task', self.on_update_task)
+            self.sio.on('delete_task', self.on_delete_task)
             self.sio.connect(f'{SERVER_URL}')
             print(f"Connection Success")
         except Exception as e:
@@ -722,6 +1091,10 @@ class KanbanBoard(QWidget):
                 task_data['remind_date'], 
                 task_data['remind_input'])
         self.create_item(task)
+        column = self.columns[task_data["status_name"]]
+        search_box = self.search_boxes[task_data["status_name"]]
+        if search_box.on_search:
+            search_box.filter(column)
 
     def on_delete_task(self, deleted_task_id):
         for column in self.columns.values():
@@ -733,171 +1106,90 @@ class KanbanBoard(QWidget):
                     return
 
     def on_update_task(self, task_id, new_task_data): 
-        new_task_data = (new_task_data['name'], new_task_data['goal'], new_task_data['detail'], new_task_data['deadline'],  new_task_data['task_type'], new_task_data['status_name'], new_task_data['waiting_task'], new_task_data['remind_date'], new_task_data['remind_input'])
+        new_task = (task_id,
+                    new_task_data['name'], 
+                    new_task_data['goal'], 
+                    new_task_data['detail'], 
+                    new_task_data['deadline'], 
+                    new_task_data['task_type'], 
+                    new_task_data['status_name'],
+                    new_task_data['waiting_task'],
+                    new_task_data['remind_date'],
+                    new_task_data['remind_input'])
         for column in self.columns.values():
             for i in range(column.count()):
                 item = column.item(i)
                 source_task_id = item.data(Qt.ItemDataRole.UserRole) 
                 if task_id == source_task_id:
-                    self.update_item(item, (task_id, *new_task_data))
+                    self.update_item(item, new_task)
+                    search_box = self.search_boxes[new_task_data['status_name']]
+                    if search_box.on_search:
+                        search_box.filter(column)
                     return
 
-    def init_ui(self):
-        self.setWindowIcon(QIcon("icon/start_button.ico"))
-        self.setWindowTitle("TODO App")
-        self.setGeometry(150, 100, 1200, 700)
-
-        todo_column = KanbanColumn("TODO", self)
-        doing_column = KanbanColumn("DOING", self)
-        waiting_column = KanbanColumn("WAITING", self)
-        done_column = KanbanColumn("DONE", self)
-        self.columns = {
-            "TODO": todo_column,
-            "DOING": doing_column,
-            "WAITING": waiting_column,
-            "DONE": done_column,
-        }
-
-        todo_search_box = SearchBox(self)
-        doing_search_box = SearchBox(self)
-        waiting_search_box = SearchBox(self)
-        done_search_box = SearchBox(self)
-
-        self.layout = QHBoxLayout()
-        self.layout.addWidget(self.create_column("TODO", todo_column, todo_search_box))
-        self.layout.addWidget(self.create_column("DOING", doing_column, doing_search_box))
-        self.layout.addWidget(self.create_column("WAITING", waiting_column, waiting_search_box))
-        self.layout.addWidget(self.create_column("DONE", done_column, done_search_box))
-        self.setLayout(self.layout)
-
-    def create_column(self, title, column, search_box):
-        column_widget = QWidget()
-        layout = QVBoxLayout()
-
-        label = QLabel(title)
-        layout.addWidget(label)
-
-        add_button = QPushButton("+", self)
-        add_button.clicked.connect(lambda: self.open_add_task_dialog(column))
-        layout.addWidget(add_button)
-
-        search_box.returnPressed.connect(lambda: search_box.filter_list(column))
-        layout.addWidget(search_box)
-
-        layout.addWidget(column)
-        column.itemDoubleClicked.connect(self.open_edit_task_dialog)  
-        column_widget.setLayout(layout)
-        return column_widget
-
-    def load_tasks(self):
-        tasks = get_alltask_from_db()
+    def load_items(self):
+        tasks = get_alltask_from_db() 
         for task in tasks:
-            task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, status_name, waiting_task, remind_date, remind_input = task
-            if ((task_type == "daily") or (status_name == "DONE" and task_type != "-")) and task_deadline_date and datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
-                new_deadline = task_deadline_date
-                if task_type == "daily":
-                    new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(days=1)).strftime("%Y/%m/%d %H:%M") 
-                elif task_type == "weekly":
-                    new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d %H:%M") 
-                elif task_type == "monthly":
-                    new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(months=1)).strftime("%Y/%m/%d %H:%M")
-                result = update_task_in_db_by_api((task_id, task_name, task_goal, task_detail, new_deadline, task_type, self.columns["TODO"].id, waiting_task, remind_date, remind_input))
-                assert result, "データベースの更新でエラー"
-                if result["type"] == "local":
-                    self.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": new_deadline, "task_type": task_type, "status_name": "TODO", "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
-                task2labels = get_task2label_from_db(task_id)
-                for task2label_id, _, label_name, _, _ in task2labels:
-                    if label_name.startswith("Done:"):
-                        delete_task2label_from_db(task2label_id)
-                task = (task_id, task_name, task_goal, task_detail, new_deadline, task_type, "TODO", waiting_task, remind_date, remind_input)
+            task = self.update_repeatly_task(task)
             self.create_item(task)
 
-    def get_color(self, task_deadline_date):
-        if task_deadline_date:
-            deadline_date = datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")
-            now = datetime.datetime.now() 
-            weekdays_diff = count_weekdays(now, deadline_date)
-            if weekdays_diff <= 0:
-                color = QColor(0, 0, 0)
-            elif weekdays_diff <= 1:
-                color = QColor(255, 0, 0)
-            elif weekdays_diff <= 3:
-                color = QColor(255, 150, 0)
-            else:
-                color = QColor(0, 0, 255)
-        else:
-            color = QColor(0, 0, 255)
-        return color
+    def update_repeatly_task(self, task):
+        task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, status_name, waiting_task, remind_date, remind_input = task
+        if ((task_type == "daily") or (status_name == "DONE" and task_type != "-")) and task_deadline_date and datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
+            new_deadline = task_deadline_date
+            if task_type == "daily":
+                new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(days=1)).strftime("%Y/%m/%d %H:%M") 
+            elif task_type == "weekly":
+                new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d %H:%M") 
+            elif task_type == "monthly":
+                new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(months=1)).strftime("%Y/%m/%d %H:%M")
+            result = update_task_in_db_by_api((task_id, task_name, task_goal, task_detail, new_deadline, task_type, self.columns["TODO"].id, waiting_task, remind_date, remind_input))
+            assert result, "データベースの更新でエラー"
+            if result["type"] == "local":
+                self.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": new_deadline, "task_type": task_type, "status_name": "TODO", "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
+            task2labels = get_task2label_by_taskid_from_db(task_id)
+            for task2label_id, _, label_name, _, _ in task2labels:
+                if label_name.startswith("Done:"):
+                    delete_task2label_from_db(task2label_id)
+            task = (task_id, task_name, task_goal, task_detail, new_deadline, task_type, "TODO", waiting_task, remind_date, remind_input)
+        return task
 
-    def calc_priority(self, task):
-        priority = 0
-        task_id, _, _, _, task_deadline_date, _, _, _, _, _ = task
-        if task_deadline_date:
-            deadline_date = datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")
-            now = datetime.datetime.now() 
-            weekdays_diff = count_weekdays(now, deadline_date)
-            if weekdays_diff <= 0:
-                priority += float('inf')
-            elif weekdays_diff <= 1:
-                priority += 100
-            elif weekdays_diff <= 3:
-                priority += 10
-        labels = get_task2label_from_db(task_id)
-        if labels:
-            for _, _, _, _, label_point in labels:
-                priority += label_point
-        self.tasks_priority[task_id] = priority
+    def calc_priority(self, task_id, task_deadline_date):
+        priority = super().calc_priority(task_id, task_deadline_date)
+        labels = get_alllabel_by_taskid_from_db(task_id)
+        for _, _, _, label_point in labels:
+            priority += label_point
+        self.items_priority[task_id] = priority
         return priority
 
     def create_item(self, task):
         task_id, task_name, _, _, task_deadline, _, status_name, _, _, _ = task
-        item = KanbanItem(f"#{task_id} {task_name}", task_id)
+        (_, _, is_pinned) = get_pin_by_taskid_from_db(task_id)
+        item = TodoItem(f"📌#{task_id} {task_name}" if is_pinned else f"#{task_id} {task_name}", task_id)
+        self.id2item[task_id] = item
         color = self.get_color(task_deadline)
         item.setForeground(color)
         item.setSizeHint(QSize(100, 50))
-        self.calc_priority(task)
+        self.calc_priority(task_id, task_deadline)
         self.columns[status_name].addItem(item)
-        self.sort_item_in_column(item)
+        self.insert_item_in_column(item)
         return item
 
     def update_item(self, item, task):
         task_id, task_name, _, _, task_deadline_date, _, status_name, _, _, _ = task
         color = self.get_color(task_deadline_date)
-        item.setText(f"#{task_id} {task_name}")
+        (_, _, is_pinned) = get_pin_by_taskid_from_db(task_id)
+        item.setText(f"📌#{task_id} {task_name}" if is_pinned else f"#{task_id} {task_name}")
         item.setForeground(color)
-        self.calc_priority(task)
+        self.calc_priority(task_id, task_deadline_date)
         self.remove_item_in_column(item)
         self.columns[status_name].addItem(item)
-        self.sort_item_in_column(item)
+        self.insert_item_in_column(item)
         return item
 
-    def remove_item_in_column(self, item):
-        column = item.listWidget()
-        column.takeItem(column.row(item))
-        return column
-
-    def sort_item_in_column(self, item):
-        target_task_id = item.data(Qt.ItemDataRole.UserRole) 
-        column = item.listWidget()
-        for i in range(column.count()): 
-            source_item = column.item(i)
-            source_task_id = source_item.data(Qt.ItemDataRole.UserRole) 
-            source_priority = self.tasks_priority[source_task_id]
-            target_priority = self.tasks_priority[target_task_id]
-            if source_priority < target_priority:
-                column.takeItem(column.row(item))
-                column.insertItem(column.row(source_item), item)
-                break
-            elif source_priority == target_priority:
-                if source_task_id < target_task_id:
-                    column.takeItem(column.row(item))
-                    column.insertItem(column.row(source_item), item)
-                    break
-        return column
-
-    def open_add_task_dialog(self, column):
-        dialog = TaskDialog(self)
-        dialog.status_combo.setCurrentText(column.name) 
+    def open_add_task_dialog(self, column_name):
+        dialog = TodoDialog(self)
+        dialog.status_combo.setCurrentText(column_name) 
         dialog.start_new_editing()
         dialog.show()
         self.dialogs[id(dialog)] = dialog
@@ -906,8 +1198,8 @@ class KanbanBoard(QWidget):
     def open_edit_task_dialog(self, item):
         item.listWidget().clearFocus()
         task_id = item.data(Qt.ItemDataRole.UserRole) 
-        if task_id in self.taskid2dialogs:
-            dialog = self.taskid2dialogs[task_id]
+        if task_id in self.id2dialogs:
+            dialog = self.id2dialogs[task_id]
             if dialog.isHidden():
                 dialog.show()
             if dialog.isMinimized():
@@ -917,8 +1209,8 @@ class KanbanBoard(QWidget):
             dialog.raise_()
             return dialog
         old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_task_type, old_status_name, old_waiting_task, old_remind_date, old_remind_input = get_task_from_db(task_id)
-        old_task2labels_id = get_task2label_from_db(task_id)
-        dialog = TaskDialog(self, item)
+        old_task2labels_id = get_task2label_by_taskid_from_db(task_id)
+        dialog = TodoDialog(self, item)
         dialog.task_name.setText(old_task_name)
         dialog.task_goal.setText(old_task_goal)
         dialog.task_detail.setPlainText(old_task_detail)
@@ -941,59 +1233,249 @@ class KanbanBoard(QWidget):
         dialog.start_new_editing()
         dialog.show()
         self.dialogs[id(dialog)] = dialog
-        self.taskid2dialogs[task_id] = dialog
+        self.id2dialogs[task_id] = dialog
+        return dialog
+
+class ActionItem(KanbanItem):
+    def __init__(self, text, action_id):
+        super().__init__(text, id=action_id)
+    
+    def get_content(self):
+        action_name, _, _, deadline, _, status_name, waiting_task, _, _, task_id = get_action_from_db(self.id)
+        content = f"{action_name}"
+        if deadline:
+            content += f"\n~{deadline}"
+        if status_name == "WAITING":
+            content += f"\nI'm waiting for... {waiting_task}"
+        if task_id:
+            task_name, _, _, _, _, _, _, _, _ = get_task_from_db(task_id)
+            content += f"\nTask: #{task_id} {task_name}"
+        return content
+    
+class ActionColumn(KanbanColumn):
+    def move_selected_item(self, action_id, source_column_name):
+        action_name, action_goal, action_detail, action_deadline_date, action_type, _, waiting_action, remind_date, remind_input, task_id = get_action_from_db(action_id)
+        new_action = (action_id, action_name, action_goal, action_detail, action_deadline_date, action_type, self.id, waiting_action, remind_date, remind_input, task_id)
+        result = update_action_in_db_by_api(new_action)
+        assert result, "データベースの更新でエラー"
+        if result["type"] == "local":
+            self.kanban_board.on_update_action(action_id, {"name": action_name, "goal": action_goal, "detail": action_detail, "deadline": action_deadline_date, "task_type": action_type, "status_name": self.name, "waiting_task": waiting_action, "remind_date": remind_date, "remind_input": remind_input, "task_id": task_id})
+        if self.name == "DONE":
+            complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
+            label = get_label_by_name_from_db(complete_date)
+            if label:
+                label_id, _, _, _ = label
+            else:
+                label_color = generate_random_color()
+                label_id = add_label_to_db(complete_date, label_color)
+            add_action2label_in_db(action_id=action_id, label_id=label_id)
+        elif source_column_name == "DONE":
+            action2labels = get_action2label_by_actionid_from_db(action_id)
+            for action2label_id, _, label_name, _, _ in action2labels:
+                if label_name.startswith("Done:"):
+                    delete_task2label_from_db(action2label_id)
+
+    def delete_selected_item(self):
+        selected_items = self.selectedItems()
+        if selected_items:
+            for selected_item in selected_items:
+                action_id = selected_item.data(Qt.ItemDataRole.UserRole) 
+                (action_name, action_goal, action_detail, action_deadline, action_type, _, waiting_action, remind_date, remind_input, task_id) = get_action_from_db(action_id)
+                deleted_task2labels = get_action2label_by_actionid_from_db(action_id)
+                deleted_task2labels_id = [ task2label_id for task2label_id, _, _, _, _ in deleted_task2labels]
+                deleted_labels_id = [ labels_id for _, labels_id, _, _, _ in deleted_task2labels]
+                result = delete_action_from_db_by_api(action_id)
+                assert result, "データベースの削除でエラー"
+                if result["type"] == "local":
+                    self.kanban_board.on_delete_action(action_id)
+                self.kanban_board.action_history.record({
+                    'type': 'delete_action',
+                    'task_id': action_id,
+                    'task_data': (action_name, action_goal, action_detail, action_deadline, action_type, self.id, waiting_action, remind_date, remind_input, task_id),
+                    'labels_id': deleted_labels_id,
+                    'task2labels_id': deleted_task2labels_id
+                })
+            self.clearFocus()
+
+    def get_popup_window(self, item):
+        return PopupTaskWindow(item, self.kanban_board, self.kanban_board.task_id, task_type="action")
+
+class ActionBoard(KanbanBoard):
+    def __init__(self, title="ActionBoard", task_id=None):
+        self.task_id = task_id
+        super().__init__(window_title=title, column_class=ActionColumn, order_of_items_file=f"order_of_items-ActionBoard-Task{task_id}.pkl" if task_id else None)
+
+    def connect_server(self):
+        self.sio = socketio.Client()
+        try:
+            self.sio.on('post_action', self.on_post_action)
+            self.sio.on('update_action', self.on_update_action)
+            self.sio.on('delete_action', self.on_delete_action)
+            self.sio.connect(f'{SERVER_URL}')
+            print(f"Connection Success")
+        except Exception as e:
+            print(f"Connection failed: {e}")
+
+    def on_post_action(self, action_data):
+        action = (action_data['actionId'], 
+                action_data['name'], 
+                action_data['goal'], 
+                action_data['detail'], 
+                action_data['deadline'], 
+                action_data['action_type'], 
+                action_data['status_name'],
+                action_data['waiting_action'], 
+                action_data['remind_date'], 
+                action_data['remind_input'],
+                action_data['task_id'])
+        self.create_item(action)
+        column = self.columns[action_data["status_name"]]
+        search_box = self.search_boxes[action_data["status_name"]]
+        if search_box.on_search:
+            search_box.filter(column)
+
+    def on_delete_action(self, deleted_action_id):
+        for column in self.columns.values():
+            for i in range(column.count()):
+                item = column.item(i)
+                action_id = item.data(Qt.ItemDataRole.UserRole) 
+                if action_id == deleted_action_id:
+                    column.takeItem(column.row(item))  
+                    return
+
+    def on_update_action(self, action_id, action_data): 
+        new_action_data = (action_data['name'], 
+                            action_data['goal'],
+                            action_data['detail'],
+                            action_data['deadline'],
+                            action_data['action_type'],
+                            action_data['status_name'],
+                            action_data['waiting_action'],
+                            action_data['remind_date'],
+                            action_data['remind_input'],
+                            action_data['task_id'])
+        for column in self.columns.values():
+            for i in range(column.count()):
+                item = column.item(i)
+                source_task_id = item.data(Qt.ItemDataRole.UserRole) 
+                if action_id == source_task_id:
+                    self.update_item(item, (action_id, *new_action_data))
+                    search_box = self.search_boxes[column.name]
+                    if search_box.on_search:
+                        search_box.filter(column)
+                    return
+
+    def update_repeatly_task(self, action):
+        action_id, action_name, action_goal, action_detail, action_deadline_date, action_type, status_name, waiting_action, remind_date, remind_input, task_id = action
+        if ((action_type == "daily") or (status_name == "DONE" and action_type != "-")) and action_deadline_date and datetime.datetime.strptime(action_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
+            new_deadline = action_deadline_date
+            if action_type == "daily":
+                new_deadline = (datetime.datetime.strptime(action_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(days=1)).strftime("%Y/%m/%d %H:%M") 
+            elif action_type == "weekly":
+                new_deadline = (datetime.datetime.strptime(action_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(weeks=1)).strftime("%Y/%m/%d %H:%M") 
+            elif action_type == "monthly":
+                new_deadline = (datetime.datetime.strptime(action_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(months=1)).strftime("%Y/%m/%d %H:%M")
+            result = update_task_in_db_by_api((action_id, action_name, action_goal, action_detail, new_deadline, action_type, self.columns["TODO"].id, waiting_action, remind_date, remind_input))
+            assert result, "データベースの更新でエラー"
+            if result["type"] == "local":
+                self.on_update_task(action_id, {"name": action_name, "goal": action_goal, "detail": action_detail, "deadline": new_deadline, "task_type": action_type, "status_name": "TODO", "waiting_action": waiting_action, "remind_date": remind_date, "remind_input": remind_input, "task_id": task_id})
+            action2labels = get_action2label_by_actionid_from_db(action_id)
+            for action2label_id, _, label_name, _, _ in action2labels:
+                if label_name.startswith("Done:"):
+                    delete_task2label_from_db(action2label_id)
+            action = (action_id, action_name, action_goal, action_detail, new_deadline, action_type, "TODO", waiting_action, remind_date, remind_input, task_id)
+        return action
+
+    def load_items(self):
+        actins = get_allaction_by_taskid_from_db(self.task_id) if self.task_id else get_allaction_from_db() 
+        for action in actins:
+            action = self.update_repeatly_task(action)
+            self.create_item(action)
+        
+    def calc_priority(self, action_id, action_deadline_date):
+        priority = super().calc_priority(action_id, action_deadline_date)
+        labels = get_alllabel_by_actionid_from_db(action_id)
+        for _, _, _, label_point in labels:
+            priority += label_point
+        self.items_priority[action_id] = priority
+        return priority
+
+    def create_item(self, action):
+        action_id, action_name, _, _, action_deadline, _, status_name, _, _, _, _ = action
+        item = ActionItem(f"#{action_id} {action_name}", action_id)
+        self.id2item[action_id] = item
+        color = self.get_color(action_deadline)
+        item.setForeground(color)
+        item.setSizeHint(QSize(100, 50))
+        self.calc_priority(action_id, action_deadline)
+        self.columns[status_name].addItem(item)
+        self.insert_item_in_column(item)
+        return item
+
+    def update_item(self, item, action):
+        action_id, action_name, _, _, action_deadline_date, _, status_name, _, _, _, _ = action
+        color = self.get_color(action_deadline_date)
+        item.setText(f"#{action_id} {action_name}")
+        item.setForeground(color)
+        self.calc_priority(action_id, action_deadline_date)
+        self.remove_item_in_column(item)
+        self.columns[status_name].addItem(item)
+        self.insert_item_in_column(item)
+        return item
+
+    def open_add_task_dialog(self, column_name):
+        dialog = ActionDialog(self, task_id=self.task_id)
+        dialog.status_combo.setCurrentText(column_name) 
+        dialog.start_new_editing()
+        dialog.show()
+        self.dialogs[id(dialog)] = dialog
+        return dialog
+
+    def open_edit_task_dialog(self, item):
+        item.listWidget().clearFocus()
+        action_id = item.data(Qt.ItemDataRole.UserRole) 
+        if action_id in self.id2dialogs:
+            dialog = self.id2dialogs[action_id]
+            if dialog.isHidden():
+                dialog.show()
+            if dialog.isMinimized():
+                dialog.showNormal()
+            if not dialog.isActiveWindow():
+                dialog.activateWindow()
+            dialog.raise_()
+            return dialog
+        old_action_name, old_action_goal, old_action_detail, old_action_deadline, old_action_type, old_status_name, old_waiting_action, old_remind_date, old_remind_input, old_task_id = get_action_from_db(action_id)
+        old_action2labels_id = get_action2label_by_actionid_from_db(action_id)
+        dialog = ActionDialog(self, item, old_task_id)
+        dialog.task_name.setText(old_action_name)
+        dialog.task_goal.setText(old_action_goal)
+        dialog.task_detail.setPlainText(old_action_detail)
+        if old_action_deadline:
+            old_task_deadline_date = old_action_deadline.split(" ")[0]
+            old_task_deadline_time = old_action_deadline.split(" ")[1]
+            old_task_deadline_hour = int(old_task_deadline_time.split(":")[0])
+            old_task_deadline_minutes = int(old_task_deadline_time.split(":")[1])
+            dialog.task_deadline_date.setText(old_task_deadline_date)
+            dialog.task_deadline_time.setTime(QTime(old_task_deadline_hour, old_task_deadline_minutes))
+        dialog.task_type.setCurrentText(old_action_type)
+        dialog.status_combo.setCurrentText(old_status_name) 
+        dialog.waiting_input.setText(old_waiting_action)
+        if old_remind_date:
+            old_remind_date = datetime.datetime.strptime(old_remind_date, "%Y/%m/%d %H:%M")
+            dialog.reminder.setChecked(True)
+            dialog.remind_timer.setDateTime(QDateTime(old_remind_date.date(), old_remind_date.time())) 
+            dialog.remind_input.setText(old_remind_input)
+        dialog.display_labels(old_action2labels_id)
+        dialog.start_new_editing()
+        dialog.show()
+        self.dialogs[id(dialog)] = dialog
+        self.id2dialogs[action_id] = dialog
         return dialog
 
     def setup_shortcuts(self):
-        undo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Z), self)
-        undo_shortcut.activated.connect(self.action_history.undo)
-        redo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Y), self)
-        redo_shortcut.activated.connect(self.action_history.redo)
-    
-    def focus_next_dialog(self, dialog_id):
-        del self.dialogs[dialog_id]
-        if len(self.dialogs) > 0:
-            next_dialog = list(self.dialogs.values())[-1]
-            next_dialog.activateWindow()
-            next_dialog.raise_()
-
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape:
-            self.close()
-        elif event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            for column in self.columns.values():
-                item = column.current_item
-                if item:
-                    column.show_popup_item(item)
-                    self.hide()
-                    return
-        super().keyPressEvent(event)
-
-    def delete_unused_label(self):
-        all_task2labels = get_alltask2label_from_db()
-        used_label_id = [label_id for _, _, label_id in all_task2labels]
-        all_labels = get_alllabel_from_db()
-        all_label_id = [label_id for label_id, _, _, _ in all_labels]
-        unused_label_id = set(all_label_id) - set(used_label_id)
-        for label_id in unused_label_id:
-            delete_label_in_db(label_id)
-
-    def delete_unused_task2label(self):
-        all_tasks = get_alltask_from_db()
-        used_task_id = [task_id for task_id, _, _, _, _, _, _, _ in all_tasks]
-        all_labels = get_alllabel_from_db()
-        used_label_id = [label_id for label_id, _, _, _ in all_labels]
-        all_task2labels = get_alltask2label_from_db()
-        for task2label_id, task_id, label_id in all_task2labels:
-            if (task_id not in used_task_id) or (label_id not in used_label_id):
-                delete_task2label_from_db(task2label_id)
-
-    def closeEvent(self, event):
-        for column in self.columns.values():
-            column.clear_item_detail()
-        self.sio.disconnect()
-        self.action_history.save()
-        event.accept()
+        super().setup_shortcuts()
+        open_new_dialog_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
+        open_new_dialog_shortcut.activated.connect(lambda: self.open_add_task_dialog("TODO"))
 
 class PopUpTaskDetail(QDialog):
     def __init__(self, parent_detail=None):
@@ -1003,7 +1485,7 @@ class PopUpTaskDetail(QDialog):
         self.setup_shortcuts()
     
     def init_ui(self):
-        self.setGeometry(100, 100, 700, 500)
+        self.setGeometry(150, 100, 500, 550)
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle("Detail")
         self.setWindowFlag(Qt.WindowType.WindowMinimizeButtonHint)
@@ -1033,15 +1515,18 @@ class PopUpTaskDetail(QDialog):
         self.setWindowTitle("Detail")
         super().show()
 
+    def closeEvent(self, event):
+        self.hide()
+
 class TaskDetail(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.default_font_size = 10  
         self.button_size = (15, 15)
+        self.load_assets()
         self.init_ui()
 
     def init_ui(self):
-        self.load_assets()
         self.setFontPointSize(self.default_font_size)
         self.popup_detail = None
         self.popup_button = self.createButton(self.popup_pixmap)
@@ -1103,9 +1588,11 @@ class TaskDetail(QTextEdit):
                 os.startfile(selected_text)
             if re.match(r'^(X|Y|Z):\\.*', selected_text):
                 os.startfile(selected_text)
-            if re.match(r'^code /(home|work00|work01)/s145053/.*', selected_text):
-                app_path = selected_text.split(" ")[1]
-                self.open_vscode(app_path)
+            if re.match(r'^code (c1x|b91) /(home|work00|work01)/s145053/.*', selected_text):
+                selected_texts = selected_text.split(" ")
+                app_server = selected_texts[1] 
+                app_path = selected_texts[2]
+                self.open_vscode(app_server, app_path)
             """
             if re.match(r'^cd /(home|work00|work01)/s145053/.*', selected_text):
                 remote_directory = selected_text.split(" ")[1]
@@ -1128,11 +1615,11 @@ class TaskDetail(QTextEdit):
         ]
         subprocess.Popen(command)
 
-    def open_vscode(self, app_path):
+    def open_vscode(self, app_server, app_path):
         command = [
             "C:\\Users\\S145053\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe",
             "--remote",
-            "ssh-remote+c1x",
+            f"ssh-remote+{app_server}",
             app_path,
         ]
         subprocess.Popen(command)
@@ -1181,71 +1668,28 @@ class TaskDetail(QTextEdit):
         super().keyPressEvent(event)
 
 class TaskDialog(QDialog):
-    def __init__(self, kanban_board, item=None):
+    def __init__(self, title, kanban_board, item=None):
         super().__init__()
         self.kanban_board = kanban_board
         self.item = item
-        self.task_id = item.data(Qt.ItemDataRole.UserRole) if item else None
+        self.id_ = item.data(Qt.ItemDataRole.UserRole) if item else None
         self.newlabels_id = []
         self.selected_label = None
         self.is_edited = False
         self.button_size = (15, 15)
         self.checkpoint_content = None
-        #self.connect_server()
+        self.title = title
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
     
-    def connect_server(self):
-        self.sio = socketio.Client()
-        try:
-            self.sio.on('update', self.on_update_task)
-            self.sio.connect(f'{SERVER_URL}')
-            print(f"Connection Success")
-        except Exception as e:
-            print(f"Connection failed: {e}")
-
-    def on_update_task(self, task_id, new_task_data): 
-        if not self.task_id or task_id != self.task_id:
-            return
-        if self.is_form_changed():
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Confirmation")
-            msg_box.setText("変更が加えられました。編集を上書きしますか？")
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-            if msg_box.exec() == QMessageBox.StandardButton.No:
-                return
-        new_task_name, new_task_goal, new_task_detail, new_task_deadline, new_task_type, new_status_name, new_waiting_task, new_remind_date, new_remind_input = (new_task_data['name'], new_task_data['goal'], new_task_data['detail'], new_task_data['deadline'],  new_task_data['task_type'], new_task_data['status_name'], new_task_data['waiting_task'], new_task_data['remind_date'], new_task_data['remind_input'])
-        old_task2labels_id = get_task2label_from_db(task_id)
-        self.task_name.setText(new_task_name)
-        self.task_goal.setText(new_task_goal)
-        self.task_detail.setPlainText(new_task_detail)
-        if new_task_deadline:
-            new_task_deadline_date = new_task_deadline.split(" ")[0]
-            new_task_deadline_time = new_task_deadline.split(" ")[1]
-            new_task_deadline_hour = int(new_task_deadline_time.split(":")[0])
-            new_task_deadline_minutes = int(new_task_deadline_time.split(":")[1])
-            self.task_deadline_date.setText(new_task_deadline_date)
-            self.task_deadline_time.setTime(QTime(new_task_deadline_hour, new_task_deadline_minutes))
-        self.task_type.setCurrentText(new_task_type)
-        self.status_combo.setCurrentText(new_status_name) 
-        self.waiting_input.setText(new_waiting_task)
-        if new_remind_date:
-            new_remind_date = datetime.datetime.strptime(new_remind_date, "%Y/%m/%d %H:%M")
-            self.reminder.setChecked(True)
-            self.remind_timer.setDateTime(QDateTime(new_remind_date.date(), new_remind_date.time())) 
-            self.remind_input.setText(new_remind_input)
-        self.display_labels(old_task2labels_id)
-        self.start_new_editing()
-
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
-        self.setWindowTitle("Task")
-        self.setGeometry(150, 100, 500, 550)
+        self.setWindowTitle(f"{self.title}")
+        self.setGeometry(100, 50, 600, 700)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
-        layout = QFormLayout()
+        self.layouts = QFormLayout()
 
         task_name_layout = QHBoxLayout()
         self.task_name = QLineEdit(self)
@@ -1256,11 +1700,11 @@ class TaskDialog(QDialog):
         popup_item_button.setMaximumSize(*self.button_size)
         popup_item_button.mousePressEvent = lambda event: self.show_popup_item()
         task_name_layout.addWidget(popup_item_button)
-        layout.addRow("Task:", task_name_layout)
+        self.layouts.addRow("Task:", task_name_layout)
 
         self.task_goal = QLineEdit(self)
         self.task_goal.textChanged.connect(self.on_edit)
-        layout.addRow("Goal:", self.task_goal)
+        self.layouts.addRow("Goal:", self.task_goal)
 
         deadline_layout = QHBoxLayout()
         self.task_deadline_date = QPushButton("", self)
@@ -1281,11 +1725,11 @@ class TaskDialog(QDialog):
         self.task_type.currentIndexChanged.connect(self.on_edit)
         checkbox_layout.addWidget(self.task_type)
         deadline_layout.addLayout(checkbox_layout)
-        layout.addRow("Deadline:", deadline_layout)
+        self.layouts.addRow("Deadline:", deadline_layout)
 
         self.task_detail = TaskDetail(self)
         self.task_detail.textChanged.connect(self.on_edit)
-        layout.addRow("Detail:", self.task_detail)
+        self.layouts.addRow("Detail:", self.task_detail)
 
         self.status_combo = QComboBox(self)
         all_status = get_allstatus_form_db()
@@ -1293,7 +1737,7 @@ class TaskDialog(QDialog):
             self.status_combo.addItem(status_name) 
             self.status_combo.setItemData(index, status_id)
         self.status_combo.currentIndexChanged.connect(self.update_visibility)
-        layout.addRow("Status:", self.status_combo)
+        self.layouts.addRow("Status:", self.status_combo)
 
         self.waiting_input_label = QLabel("Waiting for:", self.status_combo)
         self.waiting_input_label.setVisible(False) 
@@ -1301,7 +1745,7 @@ class TaskDialog(QDialog):
         self.waiting_input.textChanged.connect(self.on_edit)
         self.waiting_input.setPlaceholderText("What are you waiting for?")
         self.waiting_input.setVisible(False) 
-        layout.addRow(self.waiting_input_label, self.waiting_input)
+        self.layouts.addRow(self.waiting_input_label, self.waiting_input)
 
         self.label_display_area = QScrollArea()
         self.label_display_area.setWidgetResizable(True)
@@ -1319,7 +1763,7 @@ class TaskDialog(QDialog):
         label_layout = QVBoxLayout()
         label_layout.addWidget(self.label_input)
         label_layout.addWidget(self.label_display_area)
-        layout.addRow("Keywords:", label_layout)
+        self.layouts.addRow("Keywords:", label_layout)
 
         remind_layout = QHBoxLayout()
         self.reminder = QCheckBox(self)
@@ -1335,34 +1779,32 @@ class TaskDialog(QDialog):
         self.remind_input.textChanged.connect(self.on_edit)
         self.remind_input.setVisible(False) 
         remind_layout.addWidget(self.remind_input) 
-        layout.addRow("Reminder:", remind_layout)
+        self.layouts.addRow("Reminder:", remind_layout)
 
         todays_time_seconds = 0
         weekly_time_seconds = 0
         total_time_seconds = 0
-        if self.task_id:
-            time_data = get_time_from_db(self.task_id)
+        if self.id_:
+            time_data = get_time_by_taskid_from_db(self.id_)
             today = datetime.datetime.now().date()
             week_start_date = today - datetime.timedelta(weeks=1)
             for _, _, end_date, duration in time_data:
-                end_date_dt = datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M:%S").date()
-
+                end_date_dt = datetime.datetime.strptime(end_date, "%Y/%m/%d %H:%M").date()
                 if end_date_dt == today:
                     todays_time_seconds += duration 
                 if week_start_date <= end_date_dt <= today:
                     weekly_time_seconds += duration
                 total_time_seconds += duration
-
-        total_time_label = QLabel(f"{todays_time_seconds//3600:02}:{todays_time_seconds%3600//60:02} / {weekly_time_seconds//3600:02}:{weekly_time_seconds%3600//60:02} / {total_time_seconds//3600:02}:{total_time_seconds%3600//60:02}", self)  
+        total_time_label = QLabel(f"{todays_time_seconds//3600:02}:{todays_time_seconds%3600//60:02} / {weekly_time_seconds//3600:02}:{weekly_time_seconds%3600//60:02} / {total_time_seconds//3600:02}:{total_time_seconds%3600//60:02}")
         total_time_label.setStyleSheet("font-size: 13px;")
-        layout.addRow("D/W/ALL:", total_time_label)
+        self.layouts.addRow("D/W/ALL:", total_time_label)
 
-        self.dialog_button= QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
+        self.dialog_button = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         self.dialog_button.accepted.connect(self.handle_accept)
         self.dialog_button.rejected.connect(self.handle_reject)
-        layout.addRow(self.dialog_button)
+        self.layouts.addRow(self.dialog_button)
 
-        self.setLayout(layout)
+        self.setLayout(self.layouts)
 
     def load_assets(self):
         popup_pixmap = QPixmap("image/popup.png")
@@ -1403,7 +1845,6 @@ class TaskDialog(QDialog):
         super().keyPressEvent(event)
 
     def open_calendar(self):
-        self.on_edit()
         dialog = CalendarDialog(self.update_date)
         dialog.exec()  
 
@@ -1476,13 +1917,276 @@ class TaskDialog(QDialog):
             delete_label_in_db(label_id)
         else:
             task2label_id = label_widget.property("task2label_id")
-            delete_task2label_from_db(task2label_id)
-            task2labels_id = get_task2label_by_label_id_from_db(label_id)
-            if len(task2labels_id) == 0:
-                delete_label_in_db(label_id)
+            self.delete_existing_label(task2label_id)
         label_widget.deleteLater() 
         self.selected_label = None
         self.on_edit()
+
+    def delete_existing_label(self, task2label_id):
+        raise NotImplementedError
+
+    def post_task(self): 
+        raise NotImplementedError
+
+    def update_task(self): 
+        raise NotImplementedError
+
+    def database_update(self):
+        if self.id_:
+            self.update_task()
+        else:
+            self.post_task()
+
+    def setup_shortcuts(self):
+        self.to_database_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
+        self.to_database_shortcut.activated.connect(self.database_update)
+        ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
+        ok_shortcut.activated.connect(self.handle_accept)
+        cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        cancel_shortcut.activated.connect(self.handle_reject)
+        popup_taskdetail_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
+        popup_taskdetail_shortcut.activated.connect(self.task_detail.open_edit_dialog)
+        popup_item_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_M), self)
+        popup_item_shortcut.activated.connect(self.show_popup_item)
+
+    def handle_accept(self):
+        self.add_label()
+        self.database_update()
+        self.kanban_board.focus_next_dialog(id(self))
+        if self.item:
+            del self.kanban_board.id2dialogs[self.id_]
+        self.accept()
+
+    def handle_reject(self):
+        is_continue = self.is_continue_editing()
+        if is_continue:
+            return
+        self.kanban_board.focus_next_dialog(id(self))
+        if self.id_:
+            del self.kanban_board.id2dialogs[self.id_]
+        self.reject() 
+
+    def on_edit(self):
+        if self.is_edited and not self.is_form_changed():
+            self.setWindowTitle(f"{self.title}")
+            self.is_edited = False
+        else:
+            self.setWindowTitle(f"{self.title}*")
+            self.is_edited = True
+
+    def start_new_editing(self):
+        self.checkpoint_content = self.get_form_content()
+        self.setWindowTitle(f"{self.title}")
+        self.is_edited = False
+
+    def get_form_content(self):
+        return {"name": self.task_name.text(),
+                "goal": self.task_goal.text(),
+                "deadline": self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None,
+                "task_type": self.task_type.currentText(),
+                "detail": self.task_detail.toPlainText(),
+                "status_id": self.status_combo.itemData(self.status_combo.currentIndex()),
+                "waiting_task": self.waiting_input.text(),
+                "remind_date": self.remind_timer.text() if self.reminder.isChecked() else None,
+                "remind_input": self.remind_input.text() if self.reminder.isChecked() else None}
+
+    def is_form_changed(self):
+        return self.checkpoint_content != self.get_form_content()
+
+    def is_continue_editing(self):
+        if self.is_edited:
+            if not self.is_form_changed():
+                return False
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Confirmation")
+            msg_box.setText("編集を破棄しますか？")
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+            return msg_box.exec() == QMessageBox.StandardButton.No
+        return False
+
+    def get_popup_window(self):
+        raise NotImplementedError
+
+    def show_popup_item(self):
+        if not self.item:
+            return
+        self.move_to_doing_column()
+        self.kanban_board.hide()
+        popup_task_window = self.get_popup_window()
+        if self.kanban_board.popup_window:
+            if popup_task_window.get_id() == self.kanban_board.popup_window.get_id():
+                self.kanban_board.popup_window.raise_()
+                return
+            else:
+                self.kanban_board.popup_window.close()
+        popup_task_window.show()
+        self.kanban_board.popup_window = popup_task_window
+    
+    def move_to_doing_column(self):
+        raise NotImplementedError
+
+    def closeEvent(self, event):
+        is_continue = self.is_continue_editing()
+        if is_continue:
+            return event.ignore() 
+        self.kanban_board.focus_next_dialog(id(self))
+        if self.id_:
+            del self.kanban_board.id2dialogs[self.id_]
+        return event.accept()
+
+    def show(self):
+        if self.task_detail.popup_detail:
+            dialog = self.task_detail.popup_detail
+            if dialog.isHidden():
+                dialog.show()
+            if dialog.isMinimized():
+                dialog.showNormal()
+            dialog.activateWindow()
+            dialog.setFocus()
+            dialog.raise_()
+        else:
+            super().show()
+
+class TodoDialog(TaskDialog):
+    def __init__(self, kanban_board, item=None):
+        super().__init__("Task", kanban_board, item)
+        self.task_id = self.id_
+        self.connect_server()
+        self.subtask_board = None
+
+    def connect_server(self):
+        self.sio = socketio.Client()
+        try:
+            self.sio.on('post_action', self.on_post_action)
+            self.sio.on('update_action', self.on_update_action)
+            self.sio.on('delete_action', self.on_delete_action)
+            self.sio.connect(f'{SERVER_URL}')
+            print(f"Connection Success")
+        except Exception as e:
+            print(f"Connection failed: {e}")
+
+    def on_post_action(self, action_data):
+        if action_data['task_id'] != self.task_id:
+            return
+        action = (action_data['actionId'], 
+                action_data['name'], 
+                action_data['goal'], 
+                action_data['detail'], 
+                action_data['deadline'], 
+                action_data['action_type'], 
+                action_data['status_name'],
+                action_data['waiting_action'], 
+                action_data['remind_date'], 
+                action_data['remind_input'],
+                action_data['task_id'])
+        self.add_subtask_table(action)
+        
+    def on_update_action(self, action_id, action_data): 
+        if action_data['task_id'] != self.task_id:
+            return
+        for row in range(self.table.rowCount()):
+            source_action_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if action_id == source_action_id:
+                self.table.item(row, 1).setText(action_data["name"])
+                return
+
+    def on_delete_action(self, deleted_action_id):
+        for row in range(self.table.rowCount()):
+            action_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+            if action_id == deleted_action_id:
+                self.table.removeRow(row)
+                return
+
+    def init_ui(self):
+        super().init_ui()
+
+        action_layout = QVBoxLayout()
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers) 
+        self.table.horizontalHeader().setVisible(False) 
+        self.table.verticalHeader().setVisible(False) 
+        self.table.setColumnCount(3)
+        self.table.setColumnWidth(0, 30)  
+        self.table.setColumnWidth(1, 370)
+        self.table.setColumnWidth(2, 100)
+        all_action_data = get_allaction_by_taskid_from_db(task_id=self.id_)
+        for action in all_action_data:
+            self.add_subtask_table(action)
+        self.table.doubleClicked.connect(self.open_action_edit_dialog)
+        children_tasks_area = QScrollArea()
+        children_tasks_area.setWidgetResizable(True)
+        children_tasks_area.setMaximumHeight(100)
+        children_tasks_area.setMinimumWidth(400)
+        children_tasks_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        children_tasks_area.setWidget(self.table)
+        action_layout.addWidget(children_tasks_area)
+
+        action_button_layout = QHBoxLayout()
+        action_kanban_button = QPushButton(f"一覧") 
+        action_kanban_button.clicked.connect(self.open_action_board)
+        action_button_layout.addWidget(action_kanban_button)
+        action_button_layout.addStretch() 
+        action_plus_button = QPushButton(f"+") 
+        action_plus_button.clicked.connect(self.open_action_new_dialog)
+        action_button_layout.addWidget(action_plus_button)
+        action_layout.addLayout(action_button_layout)
+
+        index = self.layouts.getWidgetPosition(self.dialog_button)[0]
+        self.layouts.insertRow(index, "SubTasks:", action_layout)
+
+    def add_subtask_table(self, action):
+        (action_id, action_name, _, _, action_deadline, _, _, _, _, _, _) = action
+        font = QFont()
+        font.setPointSize(9)
+        row_position = self.table.rowCount()
+        self.table.insertRow(row_position)  
+        self.table.setRowHeight(row_position, 30) 
+
+        action_id_item = QTableWidgetItem(f"#{action_id}")
+        action_id_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        action_id_item.setFont(font)
+        action_id_item.setData(Qt.ItemDataRole.UserRole, action_id)
+        self.table.setItem(row_position, 0, action_id_item)  
+
+        action_name_item = QTableWidgetItem(f"{action_name}")
+        action_name_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
+        action_name_item.setFont(font)
+        self.table.setItem(row_position, 1, action_name_item)
+
+        action_deadline_item = QTableWidgetItem(f"{action_deadline}" if action_deadline else "")
+        action_deadline_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
+        action_deadline_item.setFont(font)
+        self.table.setItem(row_position, 2, action_deadline_item)
+
+    def open_action_new_dialog(self):
+        task_name = self.checkpoint_content["name"]
+        if not self.subtask_board:
+            self.subtask_board = ActionBoard(title=f"#{self.task_id} {task_name}'s ActionBoard", task_id=self.task_id)
+        self.subtask_board.open_add_task_dialog(column_name="TODO")
+
+    def open_action_edit_dialog(self, index):
+        task_name = self.checkpoint_content["name"]
+        row = index.row()
+        action_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        if not self.subtask_board:
+            self.subtask_board = ActionBoard(title=f"#{self.task_id} {task_name}'s ActionBoard", task_id=self.task_id)
+        item = self.subtask_board.id2item[action_id]
+        self.subtask_board.open_edit_task_dialog(item)
+
+    def open_action_board(self):
+        task_name = self.checkpoint_content["name"]
+        if not self.subtask_board:
+            self.subtask_board = ActionBoard(title=f"#{self.task_id} {task_name}'s ActionBoard" if self.task_id else 'ActionBoard', task_id=self.task_id)
+        self.subtask_board.show()
+
+        screen_rect = QApplication.primaryScreen().availableGeometry() 
+        self.subtask_board.move(self.width(), 50)  
+        self.subtask_board.resize(screen_rect.width() - self.width(), self.subtask_board.height())  
+        self.move(0, 50) 
+
+    def delete_existing_label(self, task2label_id):
+        delete_task2label_from_db(task2label_id)
 
     def post_task(self): 
         task_name = self.task_name.text()
@@ -1519,7 +2223,7 @@ class TaskDialog(QDialog):
                 label_color = generate_random_color()
                 label_id = add_label_to_db(complete_date, label_color)
             add_task2label_in_db(task_id=task_id, label_id=label_id)
-        task2labels = get_task2label_from_db(task_id)
+        task2labels = get_task2label_by_taskid_from_db(task_id)
         task2labels_id = [task2label_id for task2label_id, _, _, _, _ in task2labels]
         labels_id = [label_id for _, label_id, _, _, _ in task2labels]
         self.kanban_board.action_history.record({
@@ -1566,7 +2270,7 @@ class TaskDialog(QDialog):
             self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
         for label_id in self.newlabels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
-        new_task2labels = get_task2label_from_db(self.task_id)
+        new_task2labels = get_task2label_by_taskid_from_db(self.task_id)
         new_task2labels_id = [task2label_id for task2label_id, _, _, _, _ in new_task2labels]
         self.kanban_board.action_history.record({
             'type': 'edit_task',
@@ -1579,95 +2283,7 @@ class TaskDialog(QDialog):
         }) 
         self.start_new_editing()
 
-    def database_update(self):
-        if self.task_id:
-            self.update_task()
-        else:
-            self.post_task()
-
-    def setup_shortcuts(self):
-        self.to_database_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
-        self.to_database_shortcut.activated.connect(self.database_update)
-        ok_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Return), self)
-        ok_shortcut.activated.connect(self.handle_accept)
-        cancel_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        cancel_shortcut.activated.connect(self.handle_reject)
-        popup_taskdetail_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_N), self)
-        popup_taskdetail_shortcut.activated.connect(self.task_detail.open_edit_dialog)
-        popup_item_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_M), self)
-        popup_item_shortcut.activated.connect(self.show_popup_item)
-
-    def handle_accept(self):
-        self.add_label()
-        self.database_update()
-        self.kanban_board.focus_next_dialog(id(self))
-        if self.item:
-            del self.kanban_board.taskid2dialogs[self.task_id]
-        self.accept()
-
-    def handle_reject(self):
-        is_continue = self.is_continue_editing()
-        if is_continue:
-            return
-        self.kanban_board.focus_next_dialog(id(self))
-        if self.task_id:
-            del self.kanban_board.taskid2dialogs[self.task_id]
-        self.reject() 
-
-    def on_edit(self):
-        if self.is_edited and not self.is_form_changed():
-            self.setWindowTitle("Task")
-            self.is_edited = False
-        else:
-            self.setWindowTitle("Task*")
-            self.is_edited = True
-
-    def get_form_content(self):
-        return {"name": self.task_name.text(),
-                "goal": self.task_goal.text(),
-                "deadline": self.task_deadline_date.text() + " " + self.task_deadline_time.text() if self.task_deadline_date.text() != "" else None,
-                "task_type": self.task_type.currentText(),
-                "detail": self.task_detail.toPlainText(),
-                "status_id": self.status_combo.itemData(self.status_combo.currentIndex()),
-                "waiting_task": self.waiting_input.text(),
-                "remind_date": self.remind_timer.text() if self.reminder.isChecked() else None,
-                "remind_input": self.remind_input.text() if self.reminder.isChecked() else None,
-                "keywords": [label_id for _, label_id, _, _, _ in get_task2label_from_db(self.task_id)]}
-
-    def start_new_editing(self):
-        self.checkpoint_content = self.get_form_content()
-        self.setWindowTitle("Task")
-        self.is_edited = False
-
-    def is_form_changed(self):
-        return self.checkpoint_content != self.get_form_content()
-
-    def is_continue_editing(self):
-        if self.is_edited:
-            if not self.is_form_changed():
-                return False
-            msg_box = QMessageBox(self)
-            msg_box.setWindowTitle("Confirmation")
-            msg_box.setText("編集を破棄しますか？")
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-            return msg_box.exec() == QMessageBox.StandardButton.No
-        return False
-
-    def show_popup_item(self):
-        if not self.item:
-            return
-        self.kanban_board.hide()
-        popup_task_window = PopupTaskWindow(self.item, self.kanban_board)
-        if self.kanban_board.popup_window:
-            if popup_task_window.get_taskid() == self.kanban_board.popup_window.get_taskid():
-                self.kanban_board.popup_window.raise_()
-                return
-            else:
-                self.kanban_board.popup_window.close()
-        popup_task_window.show()
-        popup_task_window.task_timer.start_timer()
-        self.kanban_board.popup_window = popup_task_window
+    def move_to_doing_column(self):
         if  self.status_combo.currentText() != "DOING":
             tmp_editing_status = (self.windowTitle(), self.is_edited)
             self.status_combo.setCurrentText("DOING")
@@ -1690,27 +2306,178 @@ class TaskDialog(QDialog):
                 self.kanban_board.on_update_task(self.task_id, {"name": self.checkpoint_content["name"], "goal": self.checkpoint_content["goal"], "detail": self.checkpoint_content["detail"], "deadline": self.checkpoint_content["deadline"], "task_type": self.checkpoint_content["task_type"], "status_name": "TODO", "waiting_task": self.checkpoint_content["waiting_task"], "remind_date": self.checkpoint_content["remind_date"], "remind_input": self.checkpoint_content["remind_input"]})
             self.checkpoint_content["status_id"] = self.status_combo.itemData(self.status_combo.currentIndex())
 
-    def closeEvent(self, event):
-        is_continue = self.is_continue_editing()
-        if is_continue:
-            event.ignore() 
-        self.kanban_board.focus_next_dialog(id(self))
-        if self.task_id:
-            del self.kanban_board.taskid2dialogs[self.task_id]
-        event.accept()
+    def get_form_content(self):
+        content = super().get_form_content()
+        return {**content, "keywords": [label_id for _, label_id, _, _, _ in get_task2label_by_taskid_from_db(task_id=self.id_)]}
 
-    def show(self):
-        if self.task_detail.popup_detail:
-            dialog = self.task_detail.popup_detail
-            if dialog.isHidden():
-                dialog.show()
-            if dialog.isMinimized():
-                dialog.showNormal()
-            dialog.activateWindow()
-            dialog.setFocus()
-            dialog.raise_()
+    def get_popup_window(self):
+        return PopupTaskWindow(self.item, self.kanban_board, self.task_id)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Delete:
+            selected_rows = set(item.row() for item in self.table.selectedItems()) 
+            for row in sorted(selected_rows, reverse=True): 
+                action_id = self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                delete_action_from_db_by_api(action_id=action_id)
+        super().keyPressEvent(event)
+
+class ActionDialog(TaskDialog):
+    def __init__(self,  kanban_board, item=None, task_id=None):
+        self.task_id = task_id
+        super().__init__("Action", kanban_board, item)
+        self.action_id = self.id_
+
+    def init_ui(self):
+        super().init_ui()
+        if self.task_id:
+            task_name, _, _, _, _, _, _, _, _ = get_task_from_db(self.task_id)
+            self.parent_task = QPushButton(f"#{self.task_id} {task_name}")
         else:
-            super().show()
+            self.parent_task = QPushButton("")
+        self.parent_task.clicked.connect(self.open_task_display if self.task_id else self.open_all_task_display)
+        index = self.layouts.getWidgetPosition(self.dialog_button)[0]
+        self.layouts.insertRow(index, "ParentTask:", self.parent_task)
+
+    def open_task_display(self):
+        todo_board = TodoBoard()
+        item = todo_board.id2item[self.task_id]
+        todo_board.open_edit_task_dialog(item)
+
+    def open_all_task_display(self):
+        self.all_task_display = AllTaskDisplay()
+        if self.all_task_display.exec() == QDialog.DialogCode.Accepted:
+            task_id, task_name = self.all_task_display.selected_task
+            self.task_id = task_id
+            self.parent_task.setText(f"#{self.task_id} {task_name}")
+
+    def delete_existing_label(self, action2label_id):
+        delete_action2label_from_db(action2label_id)
+
+    def post_task(self): 
+        if not self.task_id:
+            return
+        content = self.get_form_content()
+        action_data = (
+            content["name"], 
+            content["goal"],
+            content["detail"],
+            content["deadline"],
+            content["task_type"],
+            content["status_id"],
+            content["waiting_task"],
+            content["remind_date"],
+            content["remind_input"],
+            self.task_id,
+        )
+        newlabels_id = self.newlabels_id
+        result = add_action_to_db_by_api(action_data)
+        assert result, "データベースの追加でエラー"
+        action_id = result["actionId"]
+        if result["type"] == "local":
+            self.kanban_board.on_post_task({"actionId": action_id, **content})
+        self.task_id = action_id
+        for label_id in newlabels_id:
+            add_action2label_in_db(action_id=action_id, label_id=label_id)
+        status_name = self.status_combo.currentText()
+        if status_name == "DONE":
+            complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
+            label = get_label_by_name_from_db(complete_date)
+            if label:
+                label_id, _, _, _ = label
+            else:
+                label_color = generate_random_color()
+                label_id = add_label_to_db(complete_date, label_color)
+            add_action2label_in_db(action_id=action_id, label_id=label_id)
+        action2labels = get_action2label_by_actionid_from_db(action_id)
+        action2labels_id = [task2label_id for task2label_id, _, _, _, _ in action2labels]
+        labels_id = [label_id for _, label_id, _, _, _ in action2labels]
+        self.kanban_board.action_history.record({
+            'type': 'add_task',
+            'task_id': action_id,
+            'task_data': action_data,
+            'labels_id': labels_id,
+            'task2labels_id': action2labels_id,
+        })
+
+    def update_task(self): 
+        if not self.action_id or not self.task_id:
+            return
+        old_action_data = (
+            self.checkpoint_content["name"], 
+            self.checkpoint_content["goal"],
+            self.checkpoint_content["detail"],
+            self.checkpoint_content["deadline"],
+            self.checkpoint_content["task_type"],
+            self.checkpoint_content["status_id"],
+            self.checkpoint_content["waiting_task"],
+            self.checkpoint_content["remind_date"],
+            self.checkpoint_content["remind_input"],
+            self.task_id
+        )
+        old_action_labels_id = self.checkpoint_content["keywords"]
+
+        content = self.get_form_content()
+        new_action_data = (
+            content["name"], 
+            content["goal"],
+            content["detail"],
+            content["deadline"],
+            content["task_type"],
+            content["status_id"],
+            content["waiting_task"],
+            content["remind_date"],
+            content["remind_input"],
+            self.task_id
+        )
+        result = update_action_in_db_by_api((self.action_id, *new_action_data))
+        assert result, "データベースの更新でエラー"
+        if result["type"] == "local":
+            self.kanban_board.on_update_task(self.action_id, content)
+        for label_id in self.newlabels_id:
+            add_action2label_in_db(action_id=self.action_id, label_id=label_id)
+        new_action2labels = get_action2label_by_actionid_from_db(self.action_id)
+        new_action2labels_id = [action2label_id for action2label_id, _, _, _, _ in new_action2labels]
+        self.kanban_board.action_history.record({
+            'type': 'edit_task',
+            'task_id': self.action_id,
+            'old_task_data': old_action_data, 
+            'old_task_labels_id': old_action_labels_id,
+            'new_task_data': new_action_data,
+            'new_task_newlabels_id': self.newlabels_id,
+            'new_task2labels_id': new_action2labels_id,
+        }) 
+        self.start_new_editing()
+
+    def move_to_doing_column(self):
+        if  self.status_combo.currentText() != "DOING" and self.task_id:
+            tmp_editing_status = (self.windowTitle(), self.is_edited)
+            self.status_combo.setCurrentText("DOING")
+            window_title, self.is_edited = tmp_editing_status
+            self.setWindowTitle(window_title)
+            action_data = (
+                self.checkpoint_content["name"], 
+                self.checkpoint_content["goal"],
+                self.checkpoint_content["detail"],
+                self.checkpoint_content["deadline"],
+                self.checkpoint_content["task_type"],
+                self.status_combo.itemData(self.status_combo.currentIndex()),
+                self.checkpoint_content["waiting_task"],
+                self.checkpoint_content["remind_date"],
+                self.checkpoint_content["remind_input"],
+                self.task_id
+            )
+            result = update_action_in_db_by_api((self.action_id, *action_data))
+            assert result, "データベースの更新でエラー"
+            if result["type"] == "local":
+                self.kanban_board.on_update_action(self.action_id, {"name": self.checkpoint_content["name"], "goal": self.checkpoint_content["goal"], "detail": self.checkpoint_content["detail"], "deadline": self.checkpoint_content["deadline"], "task_type": self.checkpoint_content["task_type"], "status_name": "TODO", "waiting_task": self.checkpoint_content["waiting_task"], "remind_date": self.checkpoint_content["remind_date"], "remind_input": self.checkpoint_content["remind_input"], "task_id": self.task_id})
+            self.checkpoint_content["status_id"] = self.status_combo.itemData(self.status_combo.currentIndex())
+
+    def get_form_content(self):
+        content = super().get_form_content()
+        return {**content, "keywords": [label_id for _, label_id, _, _, _ in get_action2label_by_actionid_from_db(action_id=self.id_)]}
+
+    def get_popup_window(self):
+        return PopupTaskWindow(self.item, self.kanban_board, self.task_id, task_type="action")
 
 class CalendarDialog(QDialog):
     def __init__(self, on_date_selected):
@@ -1895,8 +2662,145 @@ class ActionHistory:
         self.save_undo_stack()
         self.save_redo_stack()
 
+class TaskSearchBox(QLineEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.init_ui()
+
+    def init_ui(self):
+        self.setPlaceholderText("Search...")
+
+    def _filter_word(self, word, table):
+        is_exclude = word.startswith('!')
+        word = word[1:] if is_exclude else word
+        for row in range(table.rowCount()):
+            is_hidden = table.isColumnHidden(row)
+            if is_hidden:
+                continue
+            task_name = table.item(row, 2).text()
+            table.setColumnHidden(row, not(is_exclude ^ (task_name.find(word) != -1)))
+
+    def _filter_tag(self, tag, table):
+        is_exclude = tag.startswith('!')
+        search_label = tag[1:] if is_exclude else tag
+        for row in range(table.rowCount()):
+            is_hidden = table.isColumnHidden(row)
+            if is_hidden:
+                continue
+            task_id = table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+            labels = get_alllabel_by_taskid_from_db(task_id=task_id)
+            table.setColumnHidden(row, not(is_exclude ^ any([label_name.find(search_label) != -1 for _, label_name, _, _ in labels])))
+
+    def filter(self, table):
+        for row in range(table.rowCount()):
+            table.setColumnHidden(row, True)
+
+        search_text = self.text()
+        if search_text == "":
+            return
+        splitted_search_texts = search_text.split(' ')
+        is_tag = False
+        for splitted_search_text in splitted_search_texts:
+            if splitted_search_text == "tag:":
+                is_tag = True
+                continue
+            if is_tag is False and splitted_search_text.startswith('tag:'):
+                self._filter_tag(splitted_search_text[4:], table)
+                continue
+
+            if is_tag:
+                self._filter_tag(splitted_search_text, table)
+                is_tag = False
+            else:
+                self._filter_word(splitted_search_text, table)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            if self.hasFocus():
+                self.clearFocus()
+        super().keyPressEvent(event)
+    
+class AllTaskDisplay(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.init_ui()
+        self.setup_shortcut()
+
+    def init_ui(self):
+        self.setWindowIcon(QIcon("icon/youhishi.ico"))
+        self.setWindowTitle(f"All Tasks")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
+        self.setGeometry(200, 100, 500, 550)
+
+        layouts = QVBoxLayout()
+
+        self.search_box = TaskSearchBox(self)
+        self.search_box.returnPressed.connect(lambda: self.search_box.filter(self.table))
+        layouts.addWidget(self.search_box)
+
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers) 
+        self.table.horizontalHeader().setVisible(False) 
+        self.table.verticalHeader().setVisible(False) 
+        self.table.setColumnCount(3)
+        self.table.setColumnWidth(0, 30)  
+        self.table.setColumnWidth(1, 30)  
+        self.table.setColumnWidth(2, 370)
+        all_task_data = get_alltask_from_db()
+        for task in all_task_data:
+            self.add_task_table(task)
+        self.table.cellClicked.connect(self.on_row_clicked)
+        layouts.addWidget(self.table)
+
+        self.setLayout(layouts)
+
+    def setup_shortcut(self):
+        close_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        close_shortcut.activated.connect(self.close)
+
+    def add_task_table(self, task):
+        (task_id, task_name, _, _, _, _, _, _, _, _) = task
+        font = QFont()
+        font.setPointSize(9)
+        row_position = self.table.rowCount()
+        self.table.insertRow(row_position)  
+        self.table.setRowHeight(row_position, 30) 
+
+        select_button = QPushButton("選択") 
+        select_button.clicked.connect(lambda: self.select_task(task_id, task_name))
+        self.table.setCellWidget(row_position, 0, select_button)  
+
+        task_id_item = QTableWidgetItem(f"{task_id}")
+        task_id_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        task_id_item.setFont(font)
+        task_id_item.setData(Qt.ItemDataRole.UserRole, task_id)
+        self.table.setItem(row_position, 1, task_id_item)  
+
+        task_name_item = QTableWidgetItem(f"{task_name}")
+        task_name_item.setTextAlignment(Qt.AlignmentFlag.AlignVCenter)
+        task_name_item.setFont(font)
+        task_name_item.setData(Qt.ItemDataRole.UserRole, task_name)
+        self.table.setItem(row_position, 2, task_name_item)
+
+    def on_row_clicked(self, row, column):
+        task_id = self.table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+        task_name = self.table.item(row, 2).data(Qt.ItemDataRole.UserRole)
+        self.select_task(task_id, task_name)
+
+    def select_task(self, task_id, task_name):
+        self.selected_task = (task_id, task_name)
+        self.accept() 
+
+    def keyPressEvent(self, event: QMouseEvent):
+        if event.key() == Qt.Key.Key_Return:
+            if self.search_box.hasFocus():
+                self.search_box.returnPressed.emit() 
+            event.ignore()
+        else:
+            super().keyPressEvent(event)
+
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    kanban_board = KanbanBoard()
-    kanban_board.show()
+    todo_board = TodoBoard()
+    todo_board.show()
     sys.exit(app.exec())

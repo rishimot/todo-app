@@ -3,11 +3,10 @@ import ctypes
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QShortcut, QKeySequence
 from PyQt6.QtWidgets import QApplication
-from utils import add_task_to_db_by_api, add_task2label_in_db
-from todo_app import TaskDialog
+from todo_app import TodoDialog
 from ctypes import wintypes
 import win32con
-from todo_app import KanbanBoard
+from todo_app import TodoBoard
 
 HOTKEY_ID = 1  
 MOD_CTRL_ALT = win32con.MOD_CONTROL | win32con.MOD_ALT
@@ -22,9 +21,12 @@ class MSG(ctypes.Structure):
                 ("time", wintypes.DWORD),
                 ("pt", wintypes.POINT)]
 
-class LancherTaskDialog(TaskDialog):
+class LancherTaskDialog(TodoDialog):
     def __init__(self):
-        super().__init__(kanban_board=KanbanBoard())
+        super().__init__(kanban_board=TodoBoard())
+    
+    def init_ui(self):
+        super().init_ui()
         self.setWindowIcon(QIcon("icon/space_rocket.ico"))  
 
     def toggle_window(self):
@@ -67,6 +69,7 @@ class LancherTaskDialog(TaskDialog):
         self.clear_input()
 
     def clear_input(self):
+        self.task_id = None
         self.task_name.clear()
         self.task_goal.clear()
         self.task_detail.clear()
@@ -84,6 +87,7 @@ class LancherTaskDialog(TaskDialog):
         self.reminder.setChecked(False)
         self.remind_timer.clear()
         self.remind_input.clear()
+        self.table.clearContents()
 
 def main():
     app = QApplication(sys.argv)

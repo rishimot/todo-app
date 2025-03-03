@@ -1,0 +1,102 @@
+import sqlite3
+
+def create_db(database_path):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS label (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "name"	TEXT NOT NULL,
+        "color"	TEXT NOT NULL,
+        "point"	INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY("id" AUTOINCREMENT)
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS status (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "name"	TEXT NOT NULL UNIQUE,
+        PRIMARY KEY("id" AUTOINCREMENT)
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS task (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "name"	TEXT NOT NULL,
+        "goal"	TEXT,
+        "detail"	TEXT,
+        "status_id"	INTEGER DEFAULT 1,
+        "deadline"	TEXT,
+        "waiting_task"	TEXT,
+        "task_type"	TEXT NOT NULL DEFAULT '-',
+        "remind_date"	TEXT,
+        "remind_input"	TEXT,
+        FOREIGN KEY("status_id") REFERENCES "status"("id") ON UPDATE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS action (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "name"	TEXT NOT NULL,
+        "goal"	TEXT,
+        "detail"	TEXT,
+        "status_id"	INTEGER DEFAULT 1,
+        "deadline"	TEXT,
+        "waiting_action"	TEXT,
+        "action_type"	TEXT NOT NULL DEFAULT '-',
+        "remind_date"	TEXT,
+        "remind_input"	TEXT,
+        "task_id"	INTEGER,
+        FOREIGN KEY("status_id") REFERENCES "status"("id") ON UPDATE CASCADE,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON UPDATE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS task2label (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "task_id"	INTEGER NOT NULL,
+        "label_id"	INTEGER NOT NULL,
+        FOREIGN KEY("label_id") REFERENCES "label"("id") ON DELETE CASCADE,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS action2label (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "action_id"	INTEGER NOT NULL,
+        "label_id"	INTEGER NOT NULL,
+        FOREIGN KEY("label_id") REFERENCES "label"("id") ON DELETE CASCADE,
+        FOREIGN KEY("action_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS time (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "start_time"	TEXT NOT NULL,
+        "end_time"	TEXT NOT NULL,
+        "duration"	INTEGER NOT NULL,
+        "task_id"	INTEGER NOT NULL,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS pin (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "task_id"	INTEGER NOT NULL,
+        "is_pinned"	INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    conn.commit()
+    conn.close()
+
+if __name__ == '__main__':
+    create_db()
