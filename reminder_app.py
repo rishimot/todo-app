@@ -30,10 +30,10 @@ class ReminderApp(SingleInstanceApp):
             print(f"Connection failed: {e}")
 
     def on_notification(self, data):
-        taskName = data["taskName"]
+        task_name = data["name"]
         message = data["message"]
         self.tray_icon.showMessage(
-            taskName,
+            task_name,
             message,
             QSystemTrayIcon.MessageIcon.Information,
             5000

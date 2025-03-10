@@ -23,30 +23,51 @@ def generate_random_color():
 def get_pin_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, task_id, is_pinned FROM pin WHERE task_id = ?", (task_id, ))
+    cursor.execute("SELECT id, task_id, is_pinned FROM pin_task WHERE task_id = ?", (task_id, ))
     pin_data = cursor.fetchone()
     if not pin_data:
-        pin_id = add_pin_to_db((task_id, False))
+        pin_id = add_pin_task_to_db((task_id, False))
         pin_data = (pin_id, task_id, False)
     conn.close()
     return pin_data
 
-def add_pin_to_db(pin_data):
+def get_pin_by_actionid_from_db(action_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, action_id, is_pinned FROM pin_action WHERE action_id = ?", (action_id, ))
+    pin_data = cursor.fetchone()
+    if not pin_data:
+        pin_id = add_pin_action_to_db((action_id, False))
+        pin_data = (pin_id, action_id, False)
+    conn.close()
+    return pin_data
+
+def add_pin_task_to_db(pin_data):
     task_id, is_pinned = pin_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO pin ( task_id, is_pinned ) VALUES (?, ?)", (task_id, is_pinned))
+    cursor.execute("INSERT INTO pin_task ( task_id, is_pinned ) VALUES (?, ?)", (task_id, is_pinned))
     last_pin_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return last_pin_id
 
-def update_pin_to_db(pin_data):
+def add_pin_action_to_db(pin_data):
+    action_id, is_pinned = pin_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO pin_action ( action_id, is_pinned ) VALUES (?, ?)", (action_id, is_pinned))
+    last_pin_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_pin_id
+
+def update_pin_task_to_db(pin_data):
     pin_id, task_id, is_pinned = pin_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE pin 
+        UPDATE pin_task 
         SET task_id = ?, is_pinned = ?
         WHERE id = ?
     """, (task_id, is_pinned, pin_id))
@@ -55,10 +76,31 @@ def update_pin_to_db(pin_data):
     conn.close()
     return last_pin_id
 
-def delete_pin_in_db(pin_id):
+def update_pin_action_to_db(pin_data):
+    pin_id, action_id, is_pinned = pin_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM pin WHERE id = {pin_id}")
+    cursor.execute("""
+        UPDATE pin_action 
+        SET action_id = ?, is_pinned = ?
+        WHERE id = ?
+    """, (action_id, is_pinned, pin_id))
+    last_pin_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_pin_id
+
+def delete_pin_task_in_db(pin_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute(f"DELETE FROM pin_task WHERE id = {pin_id}")
+    conn.commit()
+    conn.close()
+
+def delete_pin_action_in_db(pin_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute(f"DELETE FROM pin_action WHERE id = {pin_id}")
     conn.commit()
     conn.close()
 
@@ -398,7 +440,7 @@ def get_action2label_by_actionid_from_db(action_id):
         SELECT action2label.id, label.id, label.name, label.color, label.point
         FROM action2label
         INNER JOIN label ON action2label.label_id = label.id
-        WHERE action2label.id = ?
+        WHERE action2label.action_id = ?
     """, (action_id, ))
     action2label = cursor.fetchall()
     conn.close()
@@ -661,7 +703,7 @@ def delete_task_from_db_by_api(task_id):
     for time_id, _, _, _ in all_time:
         delete_time_from_db(time_id)
     pin_id, _, _ = get_pin_by_taskid_from_db(task_id)
-    delete_pin_in_db(pin_id)
+    delete_pin_task_in_db(pin_id)
     return result
 
 def delete_action_from_db_by_api(action_id):
@@ -682,7 +724,7 @@ def delete_action_from_db_by_api(action_id):
     for time_id, _, _, _ in all_time:
         delete_time_from_db(time_id)
     pin_id, _, _ = get_pin_by_taskid_from_db(task_id)
-    delete_pin_in_db(pin_id)
+    delete_pin_action_in_db(pin_id)
     return result
 
 def add_time_to_db_by_api(time_data):
