@@ -779,7 +779,7 @@ def delete_time_from_db_by_api(time_id):
 def count_weekdays(start_date, end_date):
     weekdays = []
     while start_date < end_date:
-        start_date += datetime.timedelta(days=1)
         if (start_date.weekday() <= 5) and (not jpholiday.is_holiday(start_date)):
             weekdays.append(start_date)
+        start_date += datetime.timedelta(days=1)
     return len(weekdays)

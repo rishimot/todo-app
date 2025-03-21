@@ -64,7 +64,7 @@ class LancherTaskDialog(TodoDialog):
     def closeEvent(self, event):
         is_continue = self.is_continue_editing()
         if is_continue:
-            event.ignore() 
+            return event.ignore() 
         self.hide()
         self.clear_input()
 
