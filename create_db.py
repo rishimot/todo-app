@@ -100,7 +100,25 @@ def create_db(database_path):
         "id"	INTEGER NOT NULL UNIQUE,
         "action_id"	INTEGER NOT NULL,
         "is_pinned"	INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY("action_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        FOREIGN KEY("action_id") REFERENCES "action"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS mark_task (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "task_id"	INTEGER NOT NULL,
+        "is_marked"	INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS mark_action (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "action_id"	INTEGER NOT NULL,
+        "is_marked"	INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY("action_id") REFERENCES "action"("id") ON DELETE CASCADE,
         PRIMARY KEY("id" AUTOINCREMENT))
     ''')
 

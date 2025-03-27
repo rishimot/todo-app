@@ -15,6 +15,8 @@ from utils import (
     get_task_from_db,
     get_pin_by_taskid_from_db,
     get_pin_by_actionid_from_db,
+    get_mark_by_taskid_from_db,
+    get_mark_by_actionid_from_db,
     get_action_from_db,
     get_alltask_from_db,
     get_alllabel_by_taskid_from_db,
@@ -39,6 +41,8 @@ from utils import (
     update_action_in_db_by_api,
     update_pin_task_to_db,
     update_pin_action_to_db,
+    update_mark_task_to_db,
+    update_mark_action_to_db,
     delete_label_in_db,
     delete_task2label_from_db,
     delete_task2label_by_labelname_from_db,
@@ -616,7 +620,11 @@ class KanbanItem(QListWidgetItem):
     def __init__(self, text, id):
         self.id = id
         is_pinned = self.is_pinned()
-        super().__init__(f"📌#{id} {text}" if is_pinned else f"#{id} {text}")
+        is_marked = self.is_marked()
+        title = f"#{id} {text}"
+        title = f"📌{title}" if is_pinned else title
+        title = f"☆{title}" if is_marked else title
+        super().__init__(title)
         self.title = text
         self.timer = QTimer()
         self.timer.setSingleShot(True)
@@ -625,6 +633,9 @@ class KanbanItem(QListWidgetItem):
         self.setData(Qt.ItemDataRole.UserRole, id) 
     
     def is_pinned(self):
+        raise NotImplementedError
+
+    def is_marked(self):
         raise NotImplementedError
 
     def show_detail(self):
@@ -646,7 +657,11 @@ class KanbanItem(QListWidgetItem):
     def setText(self, atext):
         self.title = atext
         is_pinned = self.is_pinned()
-        return super().setText(f"📌#{self.id} {atext}" if is_pinned else f"#{self.id} {atext}")
+        is_marked = self.is_marked()
+        title = f"#{self.id} {atext}"
+        title = f"📌{title}" if is_pinned else title
+        title = f"☆{title}" if is_marked else title
+        return super().setText(title)
 
     def editText(self, atext):
         return super().setText(atext)
@@ -821,13 +836,17 @@ class KanbanColumn(QListWidget):
         if item is None:
             return 
         is_pinned = item.is_pinned()
+        is_marked = item.is_marked()
         menu = QMenu(self)
         pin_action = menu.addAction("ピンを解除" if is_pinned else "ピン留め")
+        mark_action = menu.addAction("マークを解除" if is_marked else "マーク")
         hidden_item_action = menu.addAction("非表示")
         move2top_action = menu.addAction("トップへ")
         action = menu.exec(self.mapToGlobal(position))
         if action == pin_action:
             self.toggle_pin_item(item)
+        elif action == mark_action:
+            self.toggle_mark_item(item)
         elif action == hidden_item_action:
             item.setHidden(True)
         elif action == move2top_action:
@@ -838,7 +857,13 @@ class KanbanColumn(QListWidget):
     def get_pin_data(self, item):
         raise NotImplementedError
 
+    def get_mark_data(self, item):
+        raise NotImplementedError
+
     def update_pin_data(self, pin_data):
+        raise NotImplementedError
+
+    def update_mark_data(self, mark_data):
         raise NotImplementedError
 
     def toggle_pin_item(self, item):
@@ -860,6 +885,11 @@ class KanbanColumn(QListWidget):
             item.setText(item.title)
             self.takeItem(self.row(item))
             self.insertItem(0, item)  
+
+    def toggle_mark_item(self, item):
+        (mark_id, id_, is_marked) = self.get_mark_data(item)
+        self.update_mark_data((mark_id, id_, not is_marked))
+        item.setText(item.title)
     
     def copy_item(self):
         selected_item = self.currentItem()
@@ -1192,6 +1222,10 @@ class TodoItem(KanbanItem):
     def is_pinned(self):
         (_, _, is_pinned) = get_pin_by_taskid_from_db(self.id)
         return is_pinned
+
+    def is_marked(self):
+        (_, _, is_marked) = get_mark_by_taskid_from_db(self.id)
+        return is_marked
     
     def get_content(self):
         task_name, _, _, deadline, _, status_name, waiting_task, _, _ = get_task_from_db(self.id)
@@ -1281,8 +1315,16 @@ class TodoColumn(KanbanColumn):
         pin_data = get_pin_by_taskid_from_db(id_)
         return pin_data
 
+    def get_mark_data(self, item):
+        id_ = item.data(Qt.ItemDataRole.UserRole) 
+        mark_data = get_mark_by_taskid_from_db(id_)
+        return mark_data
+
     def update_pin_data(self, pin_data):
         update_pin_task_to_db(pin_data)
+
+    def update_mark_data(self, mark_data):
+        update_mark_task_to_db(mark_data)
 
 class TodoBoard(KanbanBoard):
     def __init__(self):
@@ -1455,6 +1497,10 @@ class ActionItem(KanbanItem):
     def is_pinned(self):
         (_, _, is_pinned) = get_pin_by_actionid_from_db(self.id)
         return is_pinned
+
+    def is_marked(self):
+        (_, _, is_marked) = get_mark_by_actionid_from_db(self.id)
+        return is_marked
     
     def get_content(self):
         action_name, _, _, deadline, _, status_name, waiting_task, _, _, task_id = get_action_from_db(self.id)
@@ -1539,8 +1585,16 @@ class ActionColumn(KanbanColumn):
         pin_data = get_pin_by_actionid_from_db(id_)
         return pin_data
 
+    def get_mark_data(self, item):
+        id_ = item.data(Qt.ItemDataRole.UserRole) 
+        mark_data = get_mark_by_actionid_from_db(id_)
+        return mark_data
+
     def update_pin_data(self, pin_data):
         update_pin_action_to_db(pin_data)
+
+    def update_mark_data(self, mark_data):
+        update_mark_action_to_db(mark_data)
 
 class ActionBoard(KanbanBoard):
     def __init__(self, title="ActionBoard", task_id=None):

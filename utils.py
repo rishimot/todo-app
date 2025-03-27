@@ -20,6 +20,76 @@ def generate_random_color():
     b = random.randint(70, 255)
     return f"#{r:02x}{g:02x}{b:02x}"
 
+def get_mark_by_taskid_from_db(task_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, task_id, is_marked FROM mark_task WHERE task_id = ?", (task_id, ))
+    mark_data = cursor.fetchone()
+    if not mark_data:
+        mark_id = add_mark_task_to_db((task_id, False))
+        mark_data = (mark_id, task_id, False)
+    conn.close()
+    return mark_data
+
+def get_mark_by_actionid_from_db(action_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, action_id, is_marked FROM mark_action WHERE action_id = ?", (action_id, ))
+    mark_data = cursor.fetchone()
+    if not mark_data:
+        mark_id = add_mark_action_to_db((action_id, False))
+        mark_data = (mark_id, action_id, False)
+    conn.close()
+    return mark_data
+
+def add_mark_task_to_db(mark_data):
+    task_id, is_marked = mark_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO mark_task ( task_id, is_marked ) VALUES (?, ?)", (task_id, is_marked))
+    last_pin_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_pin_id
+
+def add_mark_action_to_db(mark_data):
+    action_id, is_marked = mark_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO mark_action ( action_id, is_marked ) VALUES (?, ?)", (action_id, is_marked))
+    last_mark_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_mark_id
+
+def update_mark_task_to_db(mark_data):
+    mark_id, task_id, is_marked = mark_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE mark_task 
+        SET task_id = ?, is_marked = ?
+        WHERE id = ?
+    """, (task_id, is_marked, mark_id))
+    last_mark_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_mark_id
+
+def update_mark_action_to_db(mark_data):
+    mark_id, action_id, is_marked = mark_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE mark_action 
+        SET action_id = ?, is_marked = ?
+        WHERE id = ?
+    """, (action_id, is_marked, mark_id))
+    last_mark_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_mark_id
+
 def get_pin_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
