@@ -614,6 +614,18 @@ def delete_task2label_by_labelname_from_db(label_name):
     conn.commit()
     conn.close()
 
+def delete_action2label_by_labelname_from_db(label_name):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM action2label
+        WHERE label_id IN (
+            SELECT id FROM label WHERE name = ?
+        )
+    """, (label_name,))
+    conn.commit()
+    conn.close()
+
 def delete_action2label_from_db(action2label_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()

@@ -46,6 +46,7 @@ from utils import (
     delete_label_in_db,
     delete_task2label_from_db,
     delete_task2label_by_labelname_from_db,
+    delete_action2label_by_labelname_from_db,
     delete_action2label_from_db,
     delete_task_from_db_by_api,
     delete_action_from_db_by_api,
@@ -495,7 +496,6 @@ class PopupTaskWindow(QDialog):
         self.kanban_board.activateWindow()
         return super().closeEvent(event)
 
-
 class SearchBox(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -863,7 +863,7 @@ class KanbanColumn(QListWidget):
     def update_pin_data(self, pin_data):
         raise NotImplementedError
 
-    def update_mark_data(self, mark_data):
+    def update_mark_data(self, item, mark_data):
         raise NotImplementedError
 
     def toggle_pin_item(self, item):
@@ -888,9 +888,9 @@ class KanbanColumn(QListWidget):
 
     def toggle_mark_item(self, item):
         (mark_id, id_, is_marked) = self.get_mark_data(item)
-        self.update_mark_data((mark_id, id_, not is_marked))
+        self.update_mark_data(item, (mark_id, id_, not is_marked))
         item.setText(item.title)
-    
+
     def copy_item(self):
         selected_item = self.currentItem()
         if selected_item:
@@ -1266,9 +1266,9 @@ class TodoColumn(KanbanColumn):
         if result["type"] == "local":
             self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline_date, "task_type": task_type, "status_name": self.name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
         if self.name == "DONE":
-            self.give_complete_label(task_id)
+            self.set_complete_label(task_id)
         elif source_column.name == "DONE":
-            self.remove_complete_label(task_id)
+            self.delete_complete_label(task_id)
         
     def delete_selected_item(self, selected_items):
         for selected_item in selected_items:
@@ -1290,7 +1290,7 @@ class TodoColumn(KanbanColumn):
             })
         self.clearFocus()
 
-    def give_complete_label(self, task_id):
+    def set_complete_label(self, task_id):
         complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
         label = get_label_by_name_from_db(complete_date)
         if label:
@@ -1300,7 +1300,7 @@ class TodoColumn(KanbanColumn):
             label_id = add_label_to_db(complete_date, label_color)
         add_task2label_in_db(task_id=task_id, label_id=label_id)
 
-    def remove_complete_label(self, task_id):
+    def delete_complete_label(self, task_id):
         task2labels = get_task2label_by_taskid_from_db(task_id)
         for task2label_id, _, label_name, _, _ in task2labels:
             if label_name.startswith("Done:"):
@@ -1323,8 +1323,28 @@ class TodoColumn(KanbanColumn):
     def update_pin_data(self, pin_data):
         update_pin_task_to_db(pin_data)
 
-    def update_mark_data(self, mark_data):
+    def update_mark_data(self, item, mark_data):
+        (_, _, is_marked) = mark_data
+        if is_marked:
+            self.set_marked_label(item)
+        else:
+            self.delete_marked_label(item)
         update_mark_task_to_db(mark_data)
+
+    def set_marked_label(self, item):
+        marked_label = "marked"
+        label = get_label_by_name_from_db(marked_label)
+        if label:
+            label_id, _, _, _ = label
+        else:
+            label_color = generate_random_color()
+            label_id = add_label_to_db(marked_label, label_color)
+        task_id = item.data(Qt.ItemDataRole.UserRole) 
+        add_task2label_in_db(task_id=task_id, label_id=label_id)
+
+    def delete_marked_label(self, item):
+        marked_label = "marked"
+        delete_task2label_by_labelname_from_db(marked_label)
 
 class TodoBoard(KanbanBoard):
     def __init__(self):
@@ -1593,8 +1613,28 @@ class ActionColumn(KanbanColumn):
     def update_pin_data(self, pin_data):
         update_pin_action_to_db(pin_data)
 
-    def update_mark_data(self, mark_data):
+    def update_mark_data(self, item, mark_data):
+        (_, _, is_marked) = mark_data
+        if is_marked:
+            self.set_marked_label(item)
+        else:
+            self.delete_marked_label(item)
         update_mark_action_to_db(mark_data)
+
+    def set_marked_label(self, item):
+        action_id = item.data(Qt.ItemDataRole.UserRole) 
+        marked_label = "marked"
+        label = get_label_by_name_from_db(marked_label)
+        if label:
+            label_id, _, _, _ = label
+        else:
+            label_color = generate_random_color()
+            label_id = add_label_to_db(marked_label, label_color)
+        add_action2label_in_db(action_id=action_id, label_id=label_id)
+
+    def delete_marked_label(self, item):
+        marked_label = "marked"
+        delete_action2label_by_labelname_from_db(marked_label)
 
 class ActionBoard(KanbanBoard):
     def __init__(self, title="ActionBoard", task_id=None):
