@@ -241,8 +241,9 @@ class DigitalTimer(QWidget):
                 1000
             )
             self.break_time = not self.break_time
-        self.start_time = None
-        if self.break_time:
+            self.start_time = None
+        elif self.break_time:
+            self.start_time = None
             self.break_time = not self.break_time
         if self.break_time and self.mode == "CountDown":
             self.label.setText(f'/ 5:00')
@@ -623,7 +624,7 @@ class KanbanItem(QListWidgetItem):
         is_marked = self.is_marked()
         title = f"#{id} {text}"
         title = f"📌{title}" if is_pinned else title
-        title = f"☆{title}" if is_marked else title
+        title = f"★{title}" if is_marked else title
         super().__init__(title)
         self.title = text
         self.timer = QTimer()
@@ -660,7 +661,7 @@ class KanbanItem(QListWidgetItem):
         is_marked = self.is_marked()
         title = f"#{self.id} {atext}"
         title = f"📌{title}" if is_pinned else title
-        title = f"☆{title}" if is_marked else title
+        title = f"★{title}" if is_marked else title
         return super().setText(title)
 
     def editText(self, atext):
@@ -1167,7 +1168,7 @@ class KanbanBoard(QWidget):
         undo_shortcut.activated.connect(self.action_history.undo)
         redo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Y), self)
         redo_shortcut.activated.connect(self.action_history.redo)
-    
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_M and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
             for column in self.columns.values():
@@ -1191,13 +1192,13 @@ class KanbanBoard(QWidget):
         if not self.columns_state_file:
             return
         try:
-            button = self.sender() 
-            column = button.property("column") 
+            button = self.sender()
+            column = button.property("column")
             with open(self.columns_state_file, 'wb') as f:
                 item_order = {}
                 for idx in range(column.count()):
                     item = column.item(idx)
-                    task_id = item.data(Qt.ItemDataRole.UserRole) 
+                    task_id = item.data(Qt.ItemDataRole.UserRole)
                     item_order[task_id] = idx
                 search_box = {}
                 search_box["search_word"] = self.search_boxes[column.name].search_bar.text()
@@ -2044,7 +2045,7 @@ class TaskDialog(QDialog):
         self.task_deadline_date.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.task_deadline_time = QTimeEdit()
         self.task_deadline_time.timeChanged.connect(self.on_edit)
-        self.task_deadline_time.setTime(QTime(23, 59))
+        self.task_deadline_time.setTime(QTime(17, 45))
         deadline_layout.addWidget(self.task_deadline_date)
         deadline_layout.addWidget(self.task_deadline_time)
 
@@ -2346,6 +2347,7 @@ class TaskDialog(QDialog):
             return
         self.move_to_doing_column()
         self.kanban_board.hide()
+        self.close()
         popup_task_window = self.get_popup_window()
         if self.kanban_board.popup_window:
             if popup_task_window.get_id() == self.kanban_board.popup_window.get_id():
