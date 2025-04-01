@@ -38,20 +38,13 @@ def create_db(database_path):
     ''')
 
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS action (
+    CREATE TABLE IF NOT EXISTS subtask (
         "id"	INTEGER NOT NULL UNIQUE,
-        "name"	TEXT NOT NULL,
-        "goal"	TEXT,
-        "detail"	TEXT,
-        "status_id"	INTEGER DEFAULT 1,
-        "deadline"	TEXT,
-        "waiting_action"	TEXT,
-        "action_type"	TEXT NOT NULL DEFAULT '-',
-        "remind_date"	TEXT,
-        "remind_input"	TEXT,
-        "task_id"	INTEGER,
-        FOREIGN KEY("status_id") REFERENCES "status"("id") ON UPDATE CASCADE,
-        FOREIGN KEY("task_id") REFERENCES "task"("id") ON UPDATE CASCADE,
+        "parent_id"	INTEGER NOT NULL,
+        "child_id"	INTEGER NOT NULL,
+        "is_treed"	INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY("parent_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        FOREIGN KEY("child_id") REFERENCES "task"("id") ON DELETE CASCADE,
         PRIMARY KEY("id" AUTOINCREMENT))
     ''')
 
@@ -62,16 +55,6 @@ def create_db(database_path):
         "label_id"	INTEGER NOT NULL,
         FOREIGN KEY("label_id") REFERENCES "label"("id") ON DELETE CASCADE,
         FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
-        PRIMARY KEY("id" AUTOINCREMENT))
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS action2label (
-        "id"	INTEGER NOT NULL UNIQUE,
-        "action_id"	INTEGER NOT NULL,
-        "label_id"	INTEGER NOT NULL,
-        FOREIGN KEY("label_id") REFERENCES "label"("id") ON DELETE CASCADE,
-        FOREIGN KEY("action_id") REFERENCES "task"("id") ON DELETE CASCADE,
         PRIMARY KEY("id" AUTOINCREMENT))
     ''')
 
@@ -96,29 +79,11 @@ def create_db(database_path):
     ''')
 
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pin_action (
-        "id"	INTEGER NOT NULL UNIQUE,
-        "action_id"	INTEGER NOT NULL,
-        "is_pinned"	INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY("action_id") REFERENCES "action"("id") ON DELETE CASCADE,
-        PRIMARY KEY("id" AUTOINCREMENT))
-    ''')
-
-    cursor.execute('''
     CREATE TABLE IF NOT EXISTS mark_task (
         "id"	INTEGER NOT NULL UNIQUE,
         "task_id"	INTEGER NOT NULL,
         "is_marked"	INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
-        PRIMARY KEY("id" AUTOINCREMENT))
-    ''')
-
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS mark_action (
-        "id"	INTEGER NOT NULL UNIQUE,
-        "action_id"	INTEGER NOT NULL,
-        "is_marked"	INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY("action_id") REFERENCES "action"("id") ON DELETE CASCADE,
         PRIMARY KEY("id" AUTOINCREMENT))
     ''')
 

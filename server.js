@@ -149,71 +149,40 @@ app.delete('/api/task/:id', async (req, res) => {
     }
 });
 
-app.post('/api/action', (req, res) => {
-    const { name, goal, detail,  deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id } = req.body;
+app.post('/api/subtask', (req, res) => {
+    const { parent_id, child_id, is_treed } = req.body;
     db.serialize(() => {
-        db.run('insert into action (name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',  [name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id], function(err) {
+        db.run('insert into subtask (parent_id, child_id, is_treed) values (?, ?, ?)',  [parent_id, child_id, is_treed], function(err) {
             if (err) {
-                return res.status(401);
+                return res.status(401).json({ message: "An error occurred", err });
             }
-            const actionId = this.lastID;
-            if (remind_date) {
-                set_reminder(task_id, name, remind_date, remind_input);
-            }
-            db.get('select name from status where id = ?', [status_id], (err, row) => {
-                if (err) {
-                    return res.status(401);
-                }
-                const status_name = row["name"];
-                sio.emit('post_action', {actionId, name, goal, detail, deadline, action_type, status_name, waiting_action, remind_date, remind_input, task_id});
-                return res.status(200).json({ actionId: actionId });
-            });
+            const subtask_id = this.lastID;
+            sio.emit('post_subtask', req.body);
+            return res.status(200).json({ subtaskId: subtask_id });
         });
     });
 });
 
-app.patch('/api/action/:id', async (req, res) => {
-    const actionId = parseInt(req.params.id);
-    const { name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id } = req.body;
-    if (!name) {
-        return res.status(400).json({ message: 'タスクを正しく指定してください。' });
-    }
+app.patch('/api/subtask/:id', async (req, res) => {
+    const subtask_id = parseInt(req.params.id);
+    const { parent_id, child_id, is_treed } = req.body;
     try {
-        await dbGet('update action set name = ?, goal = ?, detail = ?, deadline = ?,  action_type = ?, status_id = ?, waiting_action = ?, remind_date = ?, remind_input = ?, task_id = ? where id = ?',  name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id, actionId);
-        const status = await dbGet(`select name from status where id = ?`, status_id);
-        const status_name = status["name"]
-        if (status_name == "DONE") {
-            clear_reminder(task_id, remind_date);
-        }
-        else {
-            set_reminder(task_id, name, remind_date, remind_input);
-        }
-        sio.emit('update_action', actionId, { name, goal, detail, deadline, action_type, status_name, waiting_action, remind_date, remind_input, task_id });
-        return res.status(200).json({ actionId: actionId });
+        await dbGet('update subtask set parent_id = ?, child_id = ?, is_treed = ? where id = ?',  parent_id, child_id, is_treed, subtask_id);
+        sio.emit('update_subtask', subtask_id, req.body);
+        return res.status(200).json({ subtaskId: subtask_id });
     } catch (error) {
-        console.log(error);
         return res.status(401).json({ message: "An error occurred", error });
     }
 });
 
-app.delete('/api/action/:id', async (req, res) => {
-    const actionId = parseInt(req.params.id);
+app.delete('/api/subtask/:id', async (req, res) => {
+    const subtask_id = parseInt(req.params.id);
     try {
-        const action_data = await dbGet(
-            `select action.id, action.name, action.goal, action.detail, action.deadline, action.action_type, action.status_id, action.waiting_action, action.remind_date, action.remind_input, action.task_id
-             from action
-             where action.id = ?`,
-             actionId
-        );
-        if (!action_data) {
-            return res.status(400).json({ message: "The task doesn't exist" });
-        }
-        if (action_data["task_id"] in reminder) {
-            clear_reminder(action_data["task_id"]);
-        }
-        await dbRun('delete from action where id = ?', actionId);
-        sio.emit('delete_action', actionId);
-        return res.status(200).json({ deletedAction: actionId });
+        const subtask = await dbGet("select * from subtask where id = ?", subtask_id);
+        console.log(subtask);
+        await dbRun('delete from subtask where id = ?', subtask_id);
+        sio.emit('delete_subtask', subtask_id, subtask);
+        return res.status(200).json({ subtaskId: subtask_id });
     } catch (error) {
         return res.status(401).json({ message: "An error occurred", error });
     }
@@ -239,7 +208,7 @@ app.patch('/api/time/:id', async (req, res) => {
     try {
         await dbGet('update time set start_time = ?, end_time = ?, duration = ?,  task_id = ? where id = ?',  start_time, end_time, duration, task_id, timeId);
         sio.emit('update_time', task_id, req.body);
-        return res.status(200).json({ taskId: task_id });
+        return res.status(200).json({ timeId: timeId });
     } catch (error) {
         console.log(error);
         return res.status(401).json({ message: "An error occurred", error });

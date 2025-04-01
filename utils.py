@@ -31,16 +31,6 @@ def get_mark_by_taskid_from_db(task_id):
     conn.close()
     return mark_data
 
-def get_mark_by_actionid_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, action_id, is_marked FROM mark_action WHERE action_id = ?", (action_id, ))
-    mark_data = cursor.fetchone()
-    if not mark_data:
-        mark_id = add_mark_action_to_db((action_id, False))
-        mark_data = (mark_id, action_id, False)
-    conn.close()
-    return mark_data
 
 def add_mark_task_to_db(mark_data):
     task_id, is_marked = mark_data
@@ -52,15 +42,6 @@ def add_mark_task_to_db(mark_data):
     conn.close()
     return last_pin_id
 
-def add_mark_action_to_db(mark_data):
-    action_id, is_marked = mark_data
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO mark_action ( action_id, is_marked ) VALUES (?, ?)", (action_id, is_marked))
-    last_mark_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return last_mark_id
 
 def update_mark_task_to_db(mark_data):
     mark_id, task_id, is_marked = mark_data
@@ -76,19 +57,6 @@ def update_mark_task_to_db(mark_data):
     conn.close()
     return last_mark_id
 
-def update_mark_action_to_db(mark_data):
-    mark_id, action_id, is_marked = mark_data
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE mark_action 
-        SET action_id = ?, is_marked = ?
-        WHERE id = ?
-    """, (action_id, is_marked, mark_id))
-    last_mark_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return last_mark_id
 
 def get_pin_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
@@ -98,17 +66,6 @@ def get_pin_by_taskid_from_db(task_id):
     if not pin_data:
         pin_id = add_pin_task_to_db((task_id, False))
         pin_data = (pin_id, task_id, False)
-    conn.close()
-    return pin_data
-
-def get_pin_by_actionid_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, action_id, is_pinned FROM pin_action WHERE action_id = ?", (action_id, ))
-    pin_data = cursor.fetchone()
-    if not pin_data:
-        pin_id = add_pin_action_to_db((action_id, False))
-        pin_data = (pin_id, action_id, False)
     conn.close()
     return pin_data
 
@@ -122,15 +79,6 @@ def add_pin_task_to_db(pin_data):
     conn.close()
     return last_pin_id
 
-def add_pin_action_to_db(pin_data):
-    action_id, is_pinned = pin_data
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO pin_action ( action_id, is_pinned ) VALUES (?, ?)", (action_id, is_pinned))
-    last_pin_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return last_pin_id
 
 def update_pin_task_to_db(pin_data):
     pin_id, task_id, is_pinned = pin_data
@@ -146,31 +94,11 @@ def update_pin_task_to_db(pin_data):
     conn.close()
     return last_pin_id
 
-def update_pin_action_to_db(pin_data):
-    pin_id, action_id, is_pinned = pin_data
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE pin_action 
-        SET action_id = ?, is_pinned = ?
-        WHERE id = ?
-    """, (action_id, is_pinned, pin_id))
-    last_pin_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return last_pin_id
 
 def delete_pin_task_in_db(pin_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute(f"DELETE FROM pin_task WHERE id = {pin_id}")
-    conn.commit()
-    conn.close()
-
-def delete_pin_action_in_db(pin_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM pin_action WHERE id = {pin_id}")
     conn.commit()
     conn.close()
 
@@ -195,31 +123,33 @@ def get_task_from_db(task_id):
     conn.close()
     return task
 
-def get_action_from_db(action_id):
+def get_parenttask_from_db(child_task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT action.name, action.goal, action.detail, action.deadline, action.action_type, status.name, action.waiting_action, action.remind_date, action.remind_input, action.task_id
-        FROM action 
-        INNER JOIN status ON action.status_id = status.id
-        WHERE action.id = ?
-    """, (action_id, ))
-    action = cursor.fetchone()
+        SELECT task.id, task.name, task.goal, task.detail, task.deadline, task.task_type, status.name, task.waiting_task, task.remind_date, task.remind_input
+        FROM task 
+        INNER JOIN status ON task.status_id = status.id
+        INNER JOIN subtask ON subtask.parent_id = task.id
+        WHERE subtask.child_id = ?
+    """, (child_task_id, ))
+    task = cursor.fetchone()
     conn.close()
-    return action
+    return task
 
-def get_allaction_by_taskid_from_db(task_id):
+def get_allchildtask_from_db(parent_task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT action.id, action.name, action.goal, action.detail, action.deadline, action.action_type, status.name, action.waiting_action, action.remind_date, action.remind_input, action.task_id
-        FROM action 
-        INNER JOIN status ON action.status_id = status.id
-        WHERE action.task_id = ?
-    """, (task_id, ))
-    action = cursor.fetchall()
+        SELECT task.id, task.name, task.goal, task.detail, task.deadline, task.task_type, status.name, task.waiting_task, task.remind_date, task.remind_input
+        FROM task 
+        INNER JOIN status ON task.status_id = status.id
+        INNER JOIN subtask ON subtask.child_id = task.id
+        WHERE subtask.parent_id = ?
+    """, (parent_task_id, ))
+    all_tasks = cursor.fetchall()
     conn.close()
-    return action
+    return all_tasks
 
 def get_label_from_db(label_id):
     conn = sqlite3.connect(database_path)
@@ -258,31 +188,6 @@ def get_alllabel_by_taskid_from_db(task_id):
     conn.close()
     return labels
 
-def get_alllabel_by_actionid_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT label.id, label.name, label.color, label.point
-        FROM label
-        INNER JOIN action2label ON action2label.label_id = label.id
-        WHERE action2label.action_id = ?
-    """, (action_id, ))
-    labels = cursor.fetchall()
-    conn.close()
-    return labels
-
-def get_allaction_from_db():
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT action.id, action.name, action.goal, action.detail, action.deadline, action.action_type, status.name, action.waiting_action, action.remind_date, action.remind_input, action.task_id
-        FROM action
-        INNER JOIN status ON action.status_id = status.id
-    """)
-    actions = cursor.fetchall()
-    conn.close()
-    return actions
-
 def get_alltask_by_api():
     response = requests.get(f"{SERVER_URL}/api/task/")
     if response.status_code == 200:
@@ -301,15 +206,14 @@ def add_task_to_db(task_data):
     conn.close()
     return last_task_id
 
-def add_action_to_db(action_data):
-    action_name, action_goal, action_detail, action_deadline_date, action_type, status_id, waiting_action, remind_date, remind_input, task_id = action_data
+def add_subtask_to_db(parent_id, child_id, is_treed=1):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO action (name, goal, detail, deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (action_name, action_goal, action_detail, action_deadline_date, action_type, status_id, waiting_action, remind_date, remind_input, task_id))
-    last_action_id = cursor.lastrowid
+    cursor.execute("INSERT INTO subtask (parent_id, child_id, is_treed) VALUES (?, ?, ?)", (parent_id, child_id, is_treed))
+    last_subtask_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return last_action_id
+    return last_subtask_id
 
 def add_time_to_db(time_data):
     start_time, end_time, duration, task_id = time_data
@@ -354,18 +258,17 @@ def update_time_in_db(time):
     conn.close()
     return time_id
 
-def update_action_in_db(action):
-    action_id, action_name, action_goal, action_detail, action_deadline, action_type, status_id, waiting_action, remind_date, remind_input = action
+def update_subtask_in_db(subtask_id, parent_id, child_id, is_treed):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE action 
-        SET name = ?, goal = ?, detail = ?, deadline = ?, action_type = ?, status_id = ?, waiting_action = ?, remind_date = ?, remind_input = ?
+        UPDATE subtask 
+        SET parent_id = ?, child_id = ?, is_treed = ?
         WHERE id = ?
-    """, (action_name, action_goal, action_detail, action_deadline, action_type, status_id, waiting_action, remind_date, remind_input, action_id))
+    """, (parent_id, child_id, is_treed, subtask_id))
     conn.commit()
     conn.close()
-    return action_id
+    return subtask_id
 
 def delete_task_from_db(task_id):
     conn = sqlite3.connect(database_path)
@@ -375,13 +278,13 @@ def delete_task_from_db(task_id):
     conn.close()
     return task_id
 
-def delete_action_from_db(action_id):
+def delete_subtask_from_db(subtask_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM action WHERE id = {action_id}")
+    cursor.execute(f"DELETE FROM subtask WHERE id = {subtask_id}")
     conn.commit()
     conn.close()
-    return action_id
+    return subtask_id
 
 def delete_label_from_db(label_id):
     conn = sqlite3.connect(database_path)
@@ -465,19 +368,6 @@ def get_task2label_by_taskid_from_db(task_id):
     conn.close()
     return task2label
 
-def get_action2label_by_actionid_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT action2label.id, label.id, label.name, label.color, label.point
-        FROM action2label
-        INNER JOIN label ON action2label.label_id = label.id
-        WHERE action2label.action_id = ?
-    """, (action_id))
-    action2label = cursor.fetchall()
-    conn.close()
-    return action2label
-
 def get_task2label_by_labelid_from_db(label_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
@@ -490,44 +380,6 @@ def get_task2label_by_labelid_from_db(label_id):
     task2label = cursor.fetchall()
     conn.close()
     return task2label
-
-def get_action2label_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT action2label.id, action2label.action_id, actio2label.label_id
-        FROM action2label
-        WHERE action2label.action_id = ?
-    """, (action_id, ))
-    action2labels = cursor.fetchall()
-    conn.close()
-    return action2labels
-
-def get_action2label_by_actionid_from_db(action_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT action2label.id, label.id, label.name, label.color, label.point
-        FROM action2label
-        INNER JOIN label ON action2label.label_id = label.id
-        WHERE action2label.action_id = ?
-    """, (action_id, ))
-    action2label = cursor.fetchall()
-    conn.close()
-    return action2label
-
-def get_action2label_by_labelid_from_db(label_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT action2label.id
-        FROM action2label
-        INNER JOIN label ON action2label.label_id = label.id
-        WHERE action2label.label_id = ?
-    """, (label_id, ))
-    action2label = cursor.fetchall()
-    conn.close()
-    return action2label
 
 def get_time_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
@@ -614,25 +466,6 @@ def delete_task2label_by_labelname_from_db(label_name):
     conn.commit()
     conn.close()
 
-def delete_action2label_by_labelname_from_db(label_name):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        DELETE FROM action2label
-        WHERE label_id IN (
-            SELECT id FROM label WHERE name = ?
-        )
-    """, (label_name,))
-    conn.commit()
-    conn.close()
-
-def delete_action2label_from_db(action2label_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM action2label WHERE id = {action2label_id}")
-    conn.commit()
-    conn.close()
-
 def add_task2label_in_db(task_id, label_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
@@ -641,31 +474,6 @@ def add_task2label_in_db(task_id, label_id):
     conn.commit()
     conn.close()
     return last_task2label_id
-
-def add_action2label_in_db(action_id, label_id):
-    conn = sqlite3.connect(database_path)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO action2label (action_id, label_id) VALUES (?, ?)", (action_id, label_id))
-    last_action2label_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
-    return last_action2label_id
-
-def get_task_from_db_by_api(task_id):
-    response = requests.get(f"{SERVER_URL}/api/task/{task_id}")
-    if response.status_code == 200:
-        task_data = response.json()
-        return {
-            task_data.name,
-            task_data.goal,
-            task_data.task_type,
-            task_data.detail,
-            task_data.deadline,
-            task_data.status_id,
-            task_data.waiting_task,
-            task_data.remind_date,
-            task_data.remind_input,
-        }
 
 def add_task_to_db_by_api(task_data):
     task_name, task_goal, task_detail, task_deadline, task_type, status_id, waiting_task, remind_date, remind_input = task_data
@@ -691,29 +499,24 @@ def add_task_to_db_by_api(task_data):
         result = {"type": "local", "taskId": task_id}
     return result
    
-def add_action_to_db_by_api(action_data):
-    action_name, action_goal, action_detail, action_deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id = action_data
+def add_subtask_to_db_by_api(parent_id, child_id, is_treed=1):
     payload = {
-        "name": action_name,
-        "goal": action_goal,
-        "detail": action_detail,
-        "deadline": action_deadline,
-        "action_type": action_type,
-        "status_id": status_id,
-        "waiting_action": waiting_action,
-        "remind_date": remind_date,
-        "remind_input": remind_input,
-        "task_id": task_id
+        "parent_id": parent_id,
+        "child_id": child_id,
+        "is_treed": is_treed,
     }
     result = None
     try:
-        response = requests.post(f"{SERVER_URL}/api/action", json=payload)
+        response = requests.post(f"{SERVER_URL}/api/subtask", json=payload)
         if response.status_code == 200:
             response_data = response.json()
-            result = {"type": "server", "actionId": response_data["actionId"]}
+            result = {"type": "server", "subtaskId": response_data["subtaskId"]}
+        else:
+            subtask_id = add_subtask_to_db(parent_id, child_id, is_treed)
+            result = {"type": "local", "subtaskId": subtask_id}
     except:
-        action_id = add_action_to_db(action_data)
-        result = {"type": "local", "actionId": action_id}
+        subtask_id = add_subtask_to_db(parent_id, child_id, is_treed)
+        result = {"type": "local", "subtaskId": subtask_id}
     return result
 
 def update_task_in_db_by_api(task_data):
@@ -740,29 +543,23 @@ def update_task_in_db_by_api(task_data):
         result = {"type": "local", "taskId": task_id}
     return result
 
-def update_action_in_db_by_api(action_data):
-    action_id, action_name, action_goal, action_detail, action_deadline, action_type, status_id, waiting_action, remind_date, remind_input, task_id = action_data
+def update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed):
     payload = {
-        "name": action_name,
-        "goal": action_goal,
-        "detail": action_detail,
-        "deadline": action_deadline,
-        "action_type": action_type,
-        "status_id": status_id,
-        "waiting_action": waiting_action,
-        "remind_date": remind_date,
-        "remind_input": remind_input,
-        "task_id": task_id,
+        "parent_id": parent_id,
+        "child_id": child_id,
+        "is_treed": is_treed,
     }
     result = None
     try:
-        response = requests.patch(f"{SERVER_URL}/api/action/{action_id}", json=payload)
+        response = requests.patch(f"{SERVER_URL}/api/subtask/{subtask_id}", json=payload)
         if response.status_code == 200:
-            response_data = response.json()
-            result = {"type": "server", "actionId": response_data["actionId"]}
+            result = {"type": "server", "subtaskId": subtask_id}
+        else:
+            subtask_id = update_subtask_in_db(subtask_id, parent_id, child_id, is_treed)
+            result = {"type": "local", "subtaskId": subtask_id}
     except:
-        action_id = update_action_in_db(action_data)
-        result = {"type": "local", "actionId": action_id}
+        subtask_id = update_subtask_in_db(subtask_id, parent_id, child_id, is_treed)
+        result = {"type": "local", "subtaskId": subtask_id}
     return result
 
 def delete_task_from_db_by_api(task_id):
@@ -778,9 +575,6 @@ def delete_task_from_db_by_api(task_id):
     all_task2labels = get_task2label_by_taskid_from_db(task_id)
     for task2label_id, _, _, _, _ in all_task2labels:
         delete_task2label_from_db(task2label_id)
-    all_actions = get_allaction_by_taskid_from_db(task_id)
-    for (action_id, _, _, _, _, _, _, _, _, _, _) in all_actions:
-        delete_action_from_db_by_api(action_id)
     all_time = get_time_by_taskid_from_db(task_id)
     for time_id, _, _, _ in all_time:
         delete_time_from_db(time_id)
@@ -788,25 +582,55 @@ def delete_task_from_db_by_api(task_id):
     delete_pin_task_in_db(pin_id)
     return result
 
-def delete_action_from_db_by_api(action_id):
-    _, _, _, _, _, _, _, _, _, task_id = get_action_from_db(action_id)
-    result = None
-    try:
-        response = requests.delete(f"{SERVER_URL}/api/action/{action_id}")
-        if response.status_code == 200:
-            result = {"type": "server", "actionId": response["actionId"]}
-    except:
-        action_id = delete_action_from_db(action_id)
-        result = {"type": "local", "actionId": action_id}
+def get_allsubtask_from_db():
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM subtask")
+    all_subtask = cursor.fetchall()
+    conn.close()
+    return all_subtask
 
-    all_task2labels = get_action2label_by_actionid_from_db(action_id)
-    for action2label_id, _, _, _, _ in all_task2labels:
-        delete_action2label_from_db(action2label_id)
-    all_time = get_time_by_taskid_from_db(task_id)
-    for time_id, _, _, _ in all_time:
-        delete_time_from_db(time_id)
-    pin_id, _, _ = get_pin_by_taskid_from_db(task_id)
-    delete_pin_action_in_db(pin_id)
+def get_subtask_from_db(parent_id, child_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT subtask.id
+        FROM subtask 
+        WHERE subtask.parent_id = ? AND subtask.child_id = ?
+    """, (parent_id, child_id))
+    subtask_id, = cursor.fetchone()
+    conn.close()
+    return subtask_id
+
+def get_subtask_by_childid_from_db(child_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT *
+        FROM subtask 
+        WHERE subtask.child_id = ?
+    """, (child_id, ))
+    subtask_id = cursor.fetchone()
+    conn.close()
+    return subtask_id
+
+def delete_subtask_from_db_by_api(parent_id, child_id):
+    subtask_id = get_subtask_from_db(parent_id, child_id)
+    payload = {
+        "parent_id": parent_id,
+        "child_id": child_id,
+    }
+    if subtask_id:
+        try:
+            response = requests.delete(f"{SERVER_URL}/api/subtask/{subtask_id}", json=payload)
+            if response.status_code == 200:
+                result = {"type": "server", "subtaskId": response["subtaskId"]}
+            else:
+                subtask_id = delete_subtask_from_db(subtask_id)
+                result = {"type": "local", "subtaskId": subtask_id}
+        except:
+            subtask_id = delete_subtask_from_db(subtask_id)
+            result = {"type": "local", "subtaskId": subtask_id}
     return result
 
 def add_time_to_db_by_api(time_data):
