@@ -141,7 +141,7 @@ def get_allchildtask_from_db(parent_task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT task.id, task.name, task.goal, task.detail, task.deadline, task.task_type, status.name, task.waiting_task, task.remind_date, task.remind_input
+        SELECT subtask.id, task.id, task.name, task.goal, task.detail, task.deadline, task.task_type, status.name, task.waiting_task, task.remind_date, task.remind_input
         FROM task 
         INNER JOIN status ON task.status_id = status.id
         INNER JOIN subtask ON subtask.child_id = task.id
@@ -590,15 +590,27 @@ def get_allsubtask_from_db():
     conn.close()
     return all_subtask
 
-def get_subtask_from_db(parent_id, child_id):
+def get_subtask_from_db(subtask_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT subtask.id
+        SELECT *
+        FROM subtask 
+        WHERE subtask.id = ?
+    """, (subtask_id,))
+    subtask = cursor.fetchone()
+    conn.close()
+    return subtask
+
+def get_subtask_by_parentid_and_childid_from_db(parent_id, child_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT *
         FROM subtask 
         WHERE subtask.parent_id = ? AND subtask.child_id = ?
-    """, (parent_id, child_id))
-    subtask_id, = cursor.fetchone()
+    """, (parent_id, child_id, ))
+    subtask_id = cursor.fetchone()
     conn.close()
     return subtask_id
 
@@ -610,12 +622,25 @@ def get_subtask_by_childid_from_db(child_id):
         FROM subtask 
         WHERE subtask.child_id = ?
     """, (child_id, ))
-    subtask_id = cursor.fetchone()
+    subtask = cursor.fetchone()
     conn.close()
-    return subtask_id
+    return subtask
 
-def delete_subtask_from_db_by_api(parent_id, child_id):
-    subtask_id = get_subtask_from_db(parent_id, child_id)
+def delete_subtask_from_db_by_api(subtask_id):
+    try:
+        response = requests.delete(f"{SERVER_URL}/api/subtask/{subtask_id}")
+        if response.status_code == 200:
+            result = {"type": "server", "subtaskId": response["subtaskId"]}
+        else:
+            subtask_id = delete_subtask_from_db(subtask_id)
+            result = {"type": "local", "subtaskId": subtask_id}
+    except:
+        subtask_id = delete_subtask_from_db(subtask_id)
+        result = {"type": "local", "subtaskId": subtask_id}
+    return result
+
+def delete_subtask_by_parentid_and_childid_from_db_by_api(parent_id, child_id):
+    subtask_id, _, _, _ = get_subtask_by_parentid_and_childid_from_db(parent_id, child_id)
     payload = {
         "parent_id": parent_id,
         "child_id": child_id,

@@ -87,7 +87,10 @@ class LancherTaskDialog(TodoDialog):
         self.reminder.setChecked(False)
         self.remind_timer.clear()
         self.remind_input.clear()
-        self.table.clearContents()
+        self.subtask_table.clearContents()
+        self.parent_task.setText("")
+        self.parent_task.setProperty("parent_task_id", None)
+        self.parent_task.setProperty("subtask_id", None)
 
 def main():
     app = QApplication(sys.argv)

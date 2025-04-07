@@ -157,7 +157,7 @@ app.post('/api/subtask', (req, res) => {
                 return res.status(401).json({ message: "An error occurred", err });
             }
             const subtask_id = this.lastID;
-            sio.emit('post_subtask', req.body);
+            sio.emit('post_subtask', subtask_id, req.body);
             return res.status(200).json({ subtaskId: subtask_id });
         });
     });
@@ -179,7 +179,6 @@ app.delete('/api/subtask/:id', async (req, res) => {
     const subtask_id = parseInt(req.params.id);
     try {
         const subtask = await dbGet("select * from subtask where id = ?", subtask_id);
-        console.log(subtask);
         await dbRun('delete from subtask where id = ?', subtask_id);
         sio.emit('delete_subtask', subtask_id, subtask);
         return res.status(200).json({ subtaskId: subtask_id });
@@ -255,32 +254,7 @@ async function init_task_reminder() {
     }
 }
 
-async function init_action_reminder() {
-    try {
-        const actions = await dbAll(
-            `select action.id, action.name, status.name as status_name, action.waiting_action, action.remind_date, action.remind_input, action.task_id
-            from action
-            INNER JOIN status ON action.status_id = status.id
-            `
-        );
-        for (const action of actions) {
-            const actionId = action.id;
-            const taskId = action.task_id;
-            const action_name = action.name;
-            const status_name = action.status_name;
-            const date = action.remind_date;
-            const message = action.remind_input;
-            if (date && status_name !== "DONE") {
-                set_reminder(taskId, action_name, date, message);
-            }
-        }
-    } catch (error) {
-        console.log("An error occurred", error);
-    }
-}
-
 server.listen(port, async() => {
     await init_task_reminder();
-    await init_action_reminder();
     console.log(`Server is running at http://localhost:${port}`);
 });
