@@ -16,6 +16,8 @@ from utils import (
     get_task_from_db,
     get_pin_by_taskid_from_db,
     get_mark_by_taskid_from_db,
+    get_display_by_taskid_from_db,
+    get_disable_tasks_from_db,
     get_alltask_from_db,
     get_allsubtask_from_db,
     get_alllabel_by_taskid_from_db,
@@ -38,11 +40,13 @@ from utils import (
     update_subtask_in_db_by_api,
     update_pin_task_to_db,
     update_mark_task_to_db,
+    update_display_task_to_db,
     delete_label_in_db,
     delete_task2label_from_db,
     delete_task2label_by_labelname_from_db,
     delete_task_from_db_by_api,
     delete_subtask_from_db_by_api,
+    delete_display_task_in_db,
     SERVER_URL,
 )
 from PyQt6.QtCore import (
@@ -410,7 +414,8 @@ class PopupTaskWindow(QDialog):
         QTimer.singleShot(5000, self.show) 
 
     def mouseDoubleClickEvent(self, event):
-        task_dialog = self.kanban_board.open_edit_task_dialog(self.item)
+        kanban_board = TodoBoard()
+        task_dialog = kanban_board.open_edit_task_dialog(self.item)
         task_dialog.finished.connect(self.check_doing_task) 
         super().mouseDoubleClickEvent(event)
     
@@ -536,6 +541,9 @@ class SearchBox(QWidget):
                     first_item = item
                 else:
                     item.setHidden(True)
+        if act.lower() == "display":
+            for item in items:
+                item.setHidden(not item.is_disable())
 
     def count_items(self, column):
         items = []
@@ -555,7 +563,7 @@ class SearchBox(QWidget):
         items = []
         for index in range(column.topLevelItemCount()):
             item = column.topLevelItem(index)
-            item.setHidden(False)
+            item.setHidden(item.is_disable())
             items.append(item)
         self._count_items(items)
         search_text = self.search_bar.text().replace("　", " ")
@@ -611,12 +619,12 @@ class SearchBox(QWidget):
 class TodoItem(QTreeWidgetItem):
     def __init__(self, text, id):
         self.id = id
-        is_pinned = self.is_pinned()
         is_marked = self.is_marked()
-        title = f"#{id} {text}"
-        title = f"📌{title}" if is_pinned else title
-        title = f"★{title}" if is_marked else title
-        super().__init__([title])
+        is_pinned = self.is_pinned()
+        set_text = f"#{id} {text}"
+        set_text = f"★{set_text}" if is_marked else set_text
+        set_text = f"📌{set_text}" if is_pinned else set_text
+        super().__init__([set_text])
         self.title = text
         self.timer = QTimer()
         self.timer.setSingleShot(True)
@@ -631,7 +639,11 @@ class TodoItem(QTreeWidgetItem):
     def is_marked(self):
         (_, _, is_marked) = get_mark_by_taskid_from_db(self.id)
         return is_marked
-    
+        
+    def is_disable(self):
+        (_, _, is_disable) = get_display_by_taskid_from_db(self.id)
+        return is_disable
+
     def get_content(self):
         task_name, _, _, deadline, _, status_name, waiting_task, _, _ = get_task_from_db(self.id)
         content = f"{task_name}"
@@ -898,12 +910,14 @@ class TodoColumn(QTreeWidget):
             return 
         is_pinned = item.is_pinned()
         is_marked = item.is_marked()
+        is_disable = item.is_disable()
         menu = QMenu(self)
         pin_action = menu.addAction("ピンを解除" if is_pinned else "ピン留め")
         mark_action = menu.addAction("マークを解除" if is_marked else "マーク")
-        hidden_item_action = menu.addAction("非表示")
-        move2top_action = menu.addAction("トップへ")
-        move2parent_action = menu.addAction("親タスクへ戻る") 
+        hidden_item_action = menu.addAction("表示" if is_disable else "非表示")
+        move2top_action = menu.addAction("アップ")
+        move2down_action = menu.addAction("ダウン")
+        back2parent_action = menu.addAction("親タスクへ戻る") 
         disable2parent_action = menu.addAction("親タスクを解除")
         action = menu.exec(self.mapToGlobal(position))
         if action == pin_action:
@@ -911,11 +925,14 @@ class TodoColumn(QTreeWidget):
         elif action == mark_action:
             self.toggle_mark_item(item)
         elif action == hidden_item_action:
-            item.setHidden(True)
+            self.toggle_display_item(item)
         elif action == move2top_action:
             self.takeTopLevelItem(self.indexOfTopLevelItem(item))
             self.insertTopLevelItem(0, item)
-        elif action == move2parent_action:
+        elif action == move2down_action:
+            self.takeTopLevelItem(self.indexOfTopLevelItem(item))
+            self.insertTopLevelItem(self.topLevelItemCount(), item)
+        elif action == back2parent_action:
             if item.hasParent():
                 subtask_id, parent_id, child_id, is_treed = get_subtask_by_childid_from_db(item.id)
                 result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=1)
@@ -955,6 +972,12 @@ class TodoColumn(QTreeWidget):
         (mark_id, id_, is_marked) = self.get_mark_data(item)
         self.update_mark_data(item, (mark_id, id_, not is_marked))
         item.setText(item.title)
+
+    def toggle_display_item(self, item):
+        (display_id, task_id, disable) = self.get_display_data(item)
+        disable = not disable
+        self.update_display_data(item, (display_id, task_id, disable))
+        item.setHidden(disable)
 
     def copy_item(self):
         selected_item = self.currentItem()
@@ -1050,40 +1073,52 @@ class TodoColumn(QTreeWidget):
         mark_data = get_mark_by_taskid_from_db(id_)
         return mark_data
 
+    def get_display_data(self, item):
+        task_id = item.data(0, Qt.ItemDataRole.UserRole) 
+        display_data = get_display_by_taskid_from_db(task_id)
+        return display_data
+
     def update_pin_data(self, pin_data):
         update_pin_task_to_db(pin_data)
 
     def update_mark_data(self, item, mark_data):
         (_, _, is_marked) = mark_data
         if is_marked:
-            self.set_marked_label(item)
+            self.set_marked_label(item, label_name="marked")
         else:
-            self.delete_marked_label(item)
+            delete_task2label_by_labelname_from_db("marked")
         update_mark_task_to_db(mark_data)
 
-    def set_marked_label(self, item):
-        marked_label = "marked"
-        label = get_label_by_name_from_db(marked_label)
+    def update_display_data(self, item, display_data):
+        (_, _, is_disable) = display_data
+        if is_disable:
+            self.set_marked_label(item, label_name="DISABLE")
+        else:
+            delete_task2label_by_labelname_from_db("DISABLE")
+        update_display_task_to_db(display_data)
+
+    def set_marked_label(self, item, label_name):
+        label = get_label_by_name_from_db(label_name)
         if label:
             label_id, _, _, _ = label
         else:
             label_color = generate_random_color()
-            label_id = add_label_to_db(marked_label, label_color)
+            label_id = add_label_to_db(label_name, label_color)
         task_id = item.data(0, Qt.ItemDataRole.UserRole) 
         add_task2label_in_db(task_id=task_id, label_id=label_id)
 
-    def delete_marked_label(self, item):
-        delete_task2label_by_labelname_from_db("marked")
-    
-    def count_items(self):
-        return self.count_all_items(self.invisibleRootItem())
+    def count_all_items(self):
+        return len(self.get_all_items())
 
-    def count_all_items(self, parent_item):
-        count = parent_item.childCount()  
+    def get_all_items(self):
+        return self.get_child_items(self.invisibleRootItem())
+
+    def get_child_items(self, parent_item):
+        child_items = []
         for i in range(parent_item.childCount()):
             child_item = parent_item.child(i)
-            count += self.count_all_items(child_item) 
-        return count
+            child_items.extend(self.get_child_items(child_item))
+        return child_items
     
 class TodoBoard(QWidget):
     def __init__(self):
@@ -1416,10 +1451,10 @@ class TodoBoard(QWidget):
             child_item.setIcon(0, QIcon())
         else:
             child_item.parent().removeChild(child_item)
+            child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
             (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
             self.columns[status_name].addTopLevelItem(child_item)
-            self.insert_item_in_column()
-            child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
+            self.insert_item_in_column(child_item)
 
     def on_delete_subtask(self, subtask_id, subtask_data):
         parent_id = subtask_data['parent_id']
@@ -1429,7 +1464,7 @@ class TodoBoard(QWidget):
         parent_item.removeChild(child_item)
         (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
         self.columns[status_name].addTopLevelItem(child_item)
-        self.insert_item_in_column()
+        self.insert_item_in_column(child_item)
         child_item.setIcon(0, QIcon(""))
 
     def on_post_task(self, task_data):
@@ -1485,6 +1520,12 @@ class TodoBoard(QWidget):
                 parent_item.addChild(child_item)
             else:
                 child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
+            
+        disable_tasks = get_disable_tasks_from_db()
+        for (_, task_id, _) in disable_tasks:
+            item = self.id2item[task_id]
+            item.setHidden(True)
+
 
     def update_repeatly_task(self, task):
         task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, status_name, waiting_task, remind_date, remind_input = task
@@ -1513,6 +1554,8 @@ class TodoBoard(QWidget):
         self.id2item[task_id] = item
         color = self.get_color(task_deadline)
         item.setForeground(0, color)
+        (_, _, disable) = get_display_by_taskid_from_db(item.id)
+        item.setHidden(disable)
         item.setSizeHint(0, QSize(100, 50))
         self.calc_priority(task_id, task_deadline)
         self.columns[status_name].addTopLevelItem(item)
@@ -2420,7 +2463,7 @@ class TodoDialog(QDialog):
                 self.checkpoint_content["waiting_task"],
                 self.checkpoint_content["remind_date"],
                 self.checkpoint_content["remind_input"],
-                self.checkpoint_content["parent_id"],
+                self.checkpoint_content["parent_task_id"],
             )
             result = update_task_in_db_by_api((self.task_id, *task_data))
             assert result, "データベースの更新でエラー"
@@ -2483,6 +2526,7 @@ class TodoDialog(QDialog):
 class CalendarDialog(QDialog):
     def __init__(self, on_date_selected):
         super().__init__()
+        self.setWindowIcon(QIcon("image/calender.png"))
         self.on_date_selected = on_date_selected
         self.init_ui()
     

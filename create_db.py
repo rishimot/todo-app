@@ -70,7 +70,7 @@ def create_db(database_path):
     ''')
 
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS pin_task (
+    CREATE TABLE IF NOT EXISTS pin (
         "id"	INTEGER NOT NULL UNIQUE,
         "task_id"	INTEGER NOT NULL,
         "is_pinned"	INTEGER NOT NULL DEFAULT 0,
@@ -79,10 +79,19 @@ def create_db(database_path):
     ''')
 
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS mark_task (
+    CREATE TABLE IF NOT EXISTS mark (
         "id"	INTEGER NOT NULL UNIQUE,
         "task_id"	INTEGER NOT NULL,
         "is_marked"	INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
+        PRIMARY KEY("id" AUTOINCREMENT))
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS display (
+        "id"	INTEGER NOT NULL UNIQUE,
+        "task_id"	INTEGER NOT NULL,
+        "disable"	INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY("task_id") REFERENCES "task"("id") ON DELETE CASCADE,
         PRIMARY KEY("id" AUTOINCREMENT))
     ''')

@@ -23,7 +23,7 @@ def generate_random_color():
 def get_mark_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, task_id, is_marked FROM mark_task WHERE task_id = ?", (task_id, ))
+    cursor.execute("SELECT id, task_id, is_marked FROM mark WHERE task_id = ?", (task_id, ))
     mark_data = cursor.fetchone()
     if not mark_data:
         mark_id = add_mark_task_to_db((task_id, False))
@@ -36,7 +36,7 @@ def add_mark_task_to_db(mark_data):
     task_id, is_marked = mark_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO mark_task ( task_id, is_marked ) VALUES (?, ?)", (task_id, is_marked))
+    cursor.execute("INSERT INTO mark ( task_id, is_marked ) VALUES (?, ?)", (task_id, is_marked))
     last_pin_id = cursor.lastrowid
     conn.commit()
     conn.close()
@@ -48,7 +48,7 @@ def update_mark_task_to_db(mark_data):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE mark_task 
+        UPDATE mark 
         SET task_id = ?, is_marked = ?
         WHERE id = ?
     """, (task_id, is_marked, mark_id))
@@ -61,7 +61,7 @@ def update_mark_task_to_db(mark_data):
 def get_pin_by_taskid_from_db(task_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, task_id, is_pinned FROM pin_task WHERE task_id = ?", (task_id, ))
+    cursor.execute("SELECT id, task_id, is_pinned FROM pin WHERE task_id = ?", (task_id, ))
     pin_data = cursor.fetchone()
     if not pin_data:
         pin_id = add_pin_task_to_db((task_id, False))
@@ -73,19 +73,18 @@ def add_pin_task_to_db(pin_data):
     task_id, is_pinned = pin_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO pin_task ( task_id, is_pinned ) VALUES (?, ?)", (task_id, is_pinned))
+    cursor.execute("INSERT INTO pin ( task_id, is_pinned ) VALUES (?, ?)", (task_id, is_pinned))
     last_pin_id = cursor.lastrowid
     conn.commit()
     conn.close()
     return last_pin_id
-
 
 def update_pin_task_to_db(pin_data):
     pin_id, task_id, is_pinned = pin_data
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
     cursor.execute("""
-        UPDATE pin_task 
+        UPDATE pin 
         SET task_id = ?, is_pinned = ?
         WHERE id = ?
     """, (task_id, is_pinned, pin_id))
@@ -94,13 +93,64 @@ def update_pin_task_to_db(pin_data):
     conn.close()
     return last_pin_id
 
-
 def delete_pin_task_in_db(pin_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
-    cursor.execute(f"DELETE FROM pin_task WHERE id = {pin_id}")
+    cursor.execute(f"DELETE FROM pin WHERE id = {pin_id}")
     conn.commit()
     conn.close()
+
+
+def get_disable_tasks_from_db():
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, task_id, disable FROM display WHERE disable = 1")
+    display_data = cursor.fetchall()
+    conn.close()
+    return display_data
+
+def get_display_by_taskid_from_db(task_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, task_id, disable FROM display WHERE task_id = ?", (task_id, ))
+    display_data = cursor.fetchone()
+    if not display_data:
+        display_id = add_display_task_to_db((task_id, False))
+        display_data = (display_id, task_id, False)
+    conn.close()
+    return display_data
+
+def add_display_task_to_db(pin_data):
+    task_id, disable = pin_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO display ( task_id, disable ) VALUES (?, ?)", (task_id, disable))
+    last_display_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_display_id
+
+def update_display_task_to_db(pin_data):
+    display_id, task_id, disable = pin_data
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE display 
+        SET task_id = ?, disable = ?
+        WHERE id = ?
+    """, (task_id, disable, display_id))
+    last_display_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return last_display_id
+
+def delete_display_task_in_db(pin_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute(f"DELETE FROM display WHERE id = {pin_id}")
+    conn.commit()
+    conn.close()
+
 
 def get_time_from_db(time_id):
     conn = sqlite3.connect(database_path)
