@@ -622,6 +622,13 @@ def delete_task_from_db_by_api(task_id):
         task_id = delete_task_from_db(task_id)
         result = {"type": "local", "taskId": task_id}
 
+    subtask_data = get_subtask_by_parentid_from_db(task_id)
+    for (subtask_id, _, _, _) in subtask_data:
+        delete_subtask_from_db_by_api(subtask_id)
+    subtask_data = get_subtask_by_childid_from_db(task_id)
+    if subtask_data:
+        (subtask_id, _, _, _) = subtask_data
+        delete_subtask_from_db_by_api(subtask_id)
     all_task2labels = get_task2label_by_taskid_from_db(task_id)
     for task2label_id, _, _, _, _ in all_task2labels:
         delete_task2label_from_db(task2label_id)
@@ -664,6 +671,18 @@ def get_subtask_by_parentid_and_childid_from_db(parent_id, child_id):
     conn.close()
     return subtask_id
 
+def get_subtask_by_parentid_from_db(parent_id):
+    conn = sqlite3.connect(database_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT *
+        FROM subtask 
+        WHERE subtask.parent_id = ?
+    """, (parent_id, ))
+    subtask = cursor.fetchall()
+    conn.close()
+    return subtask
+
 def get_subtask_by_childid_from_db(child_id):
     conn = sqlite3.connect(database_path)
     cursor = conn.cursor()
@@ -691,6 +710,25 @@ def delete_subtask_from_db_by_api(subtask_id):
 
 def delete_subtask_by_parentid_and_childid_from_db_by_api(parent_id, child_id):
     subtask_id, _, _, _ = get_subtask_by_parentid_and_childid_from_db(parent_id, child_id)
+    payload = {
+        "parent_id": parent_id,
+        "child_id": child_id,
+    }
+    if subtask_id:
+        try:
+            response = requests.delete(f"{SERVER_URL}/api/subtask/{subtask_id}", json=payload)
+            if response.status_code == 200:
+                result = {"type": "server", "subtaskId": response["subtaskId"]}
+            else:
+                subtask_id = delete_subtask_from_db(subtask_id)
+                result = {"type": "local", "subtaskId": subtask_id}
+        except:
+            subtask_id = delete_subtask_from_db(subtask_id)
+            result = {"type": "local", "subtaskId": subtask_id}
+    return result
+
+def delete_subtask_by_parentid_from_db_by_api(parent_id):
+    subtask_id, _, child_id, _ = get_subtask_by_parentid_from_db(parent_id)
     payload = {
         "parent_id": parent_id,
         "child_id": child_id,

@@ -414,14 +414,12 @@ class PopupTaskWindow(QDialog):
         QTimer.singleShot(5000, self.show) 
 
     def mouseDoubleClickEvent(self, event):
-        kanban_board = TodoBoard()
-        task_dialog = kanban_board.open_edit_task_dialog(self.item)
+        task_dialog = self.kanban_board.open_edit_task_dialog(self.item)
         task_dialog.finished.connect(self.check_doing_task) 
         super().mouseDoubleClickEvent(event)
     
     def check_doing_task(self):
-        task_id = self.get_id()
-        _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(task_id)
+        _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(self.task_id)
         if new_status_name != "DOING":
             self.close()
 
@@ -914,11 +912,8 @@ class TodoColumn(QTreeWidget):
         menu = QMenu(self)
         pin_action = menu.addAction("ピンを解除" if is_pinned else "ピン留め")
         mark_action = menu.addAction("マークを解除" if is_marked else "マーク")
-        hidden_item_action = menu.addAction("表示" if is_disable else "非表示")
-        move2top_action = menu.addAction("アップ")
-        move2down_action = menu.addAction("ダウン")
-        back2parent_action = menu.addAction("親タスクへ戻る") 
-        disable2parent_action = menu.addAction("親タスクを解除")
+        hidden_item_action = menu.addAction("非表示")
+        move2top_action = menu.addAction("トップへ")
         action = menu.exec(self.mapToGlobal(position))
         if action == pin_action:
             self.toggle_pin_item(item)
@@ -929,23 +924,6 @@ class TodoColumn(QTreeWidget):
         elif action == move2top_action:
             self.takeTopLevelItem(self.indexOfTopLevelItem(item))
             self.insertTopLevelItem(0, item)
-        elif action == move2down_action:
-            self.takeTopLevelItem(self.indexOfTopLevelItem(item))
-            self.insertTopLevelItem(self.topLevelItemCount(), item)
-        elif action == back2parent_action:
-            if item.hasParent():
-                subtask_id, parent_id, child_id, is_treed = get_subtask_by_childid_from_db(item.id)
-                result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=1)
-                assert result, "データベースの更新でエラー"
-                if result["type"] == "local":
-                    self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": 1}) 
-        elif action == disable2parent_action:
-            if item.hasParent():
-                subtask_id, parent_id, child_id, is_treed = get_subtask_by_childid_from_db(item.id)
-                result = delete_subtask_from_db_by_api(subtask_id)
-                assert result, "データベースの削除でエラー"
-                if result["type"] == "local":
-                    self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": is_treed}) 
         self.clearFocus()
 
     def toggle_pin_item(self, item):
@@ -1107,11 +1085,12 @@ class TodoColumn(QTreeWidget):
         task_id = item.data(0, Qt.ItemDataRole.UserRole) 
         add_task2label_in_db(task_id=task_id, label_id=label_id)
 
-    def count_all_items(self):
-        return len(self.get_all_items())
-
-    def get_all_items(self):
-        return self.get_child_items(self.invisibleRootItem())
+    def delete_marked_label(self, item):
+        marked_label = "marked"
+        delete_task2label_by_labelname_from_db(marked_label)
+    
+    def count_items(self):
+        return self.count_all_items(self.invisibleRootItem())
 
     def get_child_items(self, parent_item):
         child_items = []
@@ -1450,7 +1429,6 @@ class TodoBoard(QWidget):
             parent_item.addChild(child_item)
             child_item.setIcon(0, QIcon())
         else:
-            child_item.parent().removeChild(child_item)
             child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
             (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
             self.columns[status_name].addTopLevelItem(child_item)
@@ -1462,10 +1440,6 @@ class TodoBoard(QWidget):
         parent_item = self.id2item[parent_id]
         child_item = self.id2item[child_id]
         parent_item.removeChild(child_item)
-        (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
-        self.columns[status_name].addTopLevelItem(child_item)
-        self.insert_item_in_column(child_item)
-        child_item.setIcon(0, QIcon(""))
 
     def on_post_task(self, task_data):
         task = (task_data['taskId'], 
@@ -2463,7 +2437,6 @@ class TodoDialog(QDialog):
                 self.checkpoint_content["waiting_task"],
                 self.checkpoint_content["remind_date"],
                 self.checkpoint_content["remind_input"],
-                self.checkpoint_content["parent_task_id"],
             )
             result = update_task_in_db_by_api((self.task_id, *task_data))
             assert result, "データベースの更新でエラー"
