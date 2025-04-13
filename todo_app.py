@@ -272,44 +272,31 @@ class TargetWidget(QLineEdit):
         super().keyPressEvent(event)
 
 class PopupTaskWindow(QDialog):
-    def __init__(self, item, kanban_board, task_id, task_type="todo"):
+    def __init__(self, item):
         super().__init__()
         self.setWindowIcon(QIcon("icon/start_button.ico"))
         self.setWindowTitle("Popup Task Window")
-        self.text = item.title
-        self.kanban_board = kanban_board
         self.item = item
-        self.task_id = task_id 
+        self.task_id = item.data(0, Qt.ItemDataRole.UserRole) 
+        self.text = item.name
+        self.kanban_board = None
         self.start_pos = None
         self.close_button_size = (15, 15)
         self.pin_size = (15, 15)
-        self.connect_server(task_type=task_type)
+        self.connect_server()
         self.load_assets()
         self.init_ui()
         self.setup_shortcuts()
 
-    def connect_server(self, task_type):
+    def connect_server(self):
         self.sio = socketio.Client()
         try:
-            if task_type == "todo":
-                self.sio.on('update_task', self.on_update_task)
-            elif task_type == "action":
-                self.sio.on('update_action', self.on_update_action)
+            self.sio.on('update_task', self.on_update_task)
 
             self.sio.connect(f'{SERVER_URL}')
             print(f"Connection Success")
         except Exception as e:
             print(f"Connection failed: {e}")
-
-    def on_update_action(self, updated_action_id, updated_action_data): 
-        if updated_action_id != self.item.data(0, Qt.ItemDataRole.UserRole):
-            return
-        self.text = updated_action_data['name']
-        self.task_name.setText(updated_action_data['name'])
-        """
-        if updated_action_data["status_name"] != "DOING":
-            self.close()
-        """
 
     def on_update_task(self, updated_task_id, updated_task_data): 
         if updated_task_id != self.item.data(0, Qt.ItemDataRole.UserRole):
@@ -392,6 +379,9 @@ class PopupTaskWindow(QDialog):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Escape:
             return
         if event.key() == Qt.Key.Key_N and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            if not self.kanban_board:
+                self.kanban_board = TodoBoard()
+                self.kanban_board.popup_window = self
             if self.kanban_board.isHidden():
                 self.kanban_board.show()
             if self.kanban_board.isMinimized():
@@ -427,6 +417,9 @@ class PopupTaskWindow(QDialog):
         if event.button() == Qt.MouseButton.LeftButton:
             self.start_pos = event.globalPosition().toPoint()  
         if event.button() == Qt.MouseButton.RightButton:
+            if not self.kanban_board:
+                self.kanban_board = TodoBoard()
+                self.kanban_board.popup_window = self
             if self.kanban_board.isHidden():
                 self.kanban_board.show()
             if self.kanban_board.isMinimized():
@@ -479,16 +472,17 @@ class PopupTaskWindow(QDialog):
         self.setFixedHeight(35)
         self.adjustSize()
 
-    def get_id(self):
-        return id(self)
-
     def closeEvent(self, event):
         if self.task_timer.start_time:
             self.task_timer.stop_timer()
-        self.kanban_board.popup_window = None
-        self.kanban_board.show()
-        self.kanban_board.raise_()
-        self.kanban_board.activateWindow()
+
+        if self.kanban_board:
+            self.kanban_board.show()
+            self.kanban_board.raise_()
+            self.kanban_board.activateWindow()
+        else:
+            kanban_board = TodoBoard()
+            kanban_board.show()
         return super().closeEvent(event)
 
 class SearchBox(QWidget):
@@ -563,47 +557,62 @@ class SearchBox(QWidget):
             item = column.topLevelItem(index)
             item.setHidden(item.is_disable())
             items.append(item)
-        self._count_items(items)
         search_text = self.search_bar.text().replace("　", " ")
-        if search_text == "":
-            return
-        splitted_search_texts = search_text.split(' ')
-        is_tag = False
-        is_act = False
-        tags = []
-        acts = []
-        words = []
-        for splitted_search_text in splitted_search_texts:
-            if splitted_search_text == "tag:":
-                is_tag = True
-                continue
+        if search_text != "":
+            splitted_search_texts = search_text.split(' ')
+            is_tag = False
+            is_pre_act = False
+            is_act = False
+            tags = []
+            acts = []
+            pre_acts = []
+            words = []
+            for splitted_search_text in splitted_search_texts:
+                if splitted_search_text == "tag:":
+                    is_tag = True
+                    continue
 
-            if splitted_search_text == "act:":
-                is_act = True
-                continue
+                if splitted_search_text == "pre-act:":
+                    is_pre_act = True
+                    continue
 
-            if is_tag is False and splitted_search_text.startswith('tag:'):
-                tags.append(splitted_search_text[4:])
-                continue
+                if splitted_search_text == "act:":
+                    is_act = True
+                    continue
 
-            if is_act is False and splitted_search_text.startswith('act:'):
-                acts.append(splitted_search_text[4:])
-                continue
 
-            if is_tag:
-                tags.append(splitted_search_text)
-                is_tag = False
-            elif is_act:
-                acts.append(splitted_search_text)
-                is_act = False
-            else:
-                words.append(splitted_search_text)
-        for tag in tags:
-            self._filter_tag(tag, items)
-        for word in words:
-            self._filter_word(word, items)
-        for act in acts:
-            self._filter_act(act, items)
+                if is_tag is False and splitted_search_text.startswith('tag:'):
+                    tags.append(splitted_search_text[4:])
+                    continue
+
+                if is_pre_act is False and splitted_search_text.startswith('pre-act:'):
+                    pre_acts.append(splitted_search_text[4:])
+                    continue
+
+                if is_act is False and splitted_search_text.startswith('act:'):
+                    acts.append(splitted_search_text[4:])
+                    continue
+
+                if is_tag:
+                    tags.append(splitted_search_text)
+                    is_tag = False
+                elif is_act:
+                    acts.append(splitted_search_text)
+                    is_act = False
+                elif is_pre_act:
+                    pre_acts.append(splitted_search_text)
+                    is_pre_act = False
+                else:
+                    words.append(splitted_search_text)
+
+            for pre_act in pre_acts:
+                self._filter_act(pre_act, items)
+            for tag in tags:
+                self._filter_tag(tag, items)
+            for word in words:
+                self._filter_word(word, items)
+            for act in acts:
+                self._filter_act(act, items)
         self._count_items(items)
 
     def keyPressEvent(self, event):
@@ -623,7 +632,7 @@ class TodoItem(QTreeWidgetItem):
         set_text = f"★{set_text}" if is_marked else set_text
         set_text = f"📌{set_text}" if is_pinned else set_text
         super().__init__([set_text])
-        self.title = text
+        self.name = text
         self.timer = QTimer()
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.show_detail)
@@ -653,6 +662,8 @@ class TodoItem(QTreeWidgetItem):
         if parent_task:
             _, task_name, _, _, _, _, _, _, _, _ = parent_task
             content += f"\n⬆️{task_name}"
+        if self.childCount() > 0:
+            content += f"\nA number of children: {len(self.get_child_items())}"
         return content
     
     def show_detail(self):
@@ -680,15 +691,20 @@ class TodoItem(QTreeWidgetItem):
     def editText(self, atext):
         return super().setText(0, atext)
     
-    def getParentId(self):
-        parent_task_id, _, _, _, _, _, _, _, _, _ = get_parenttask_from_db(child_task_id=self.id)
-        return parent_task_id
-
-    def hasParent(self):
+    def has_parent_task(self):
         return get_parenttask_from_db(child_task_id=self.id) is not None
 
+    def get_child_items(self):
+        child_items = []
+        for i in range(self.childCount()):
+            child_item = self.child(i)
+            if not child_item.is_disable():
+                child_items.append(child_item)
+                child_items.extend(child_item.get_child_items())
+        return child_items
+
 class TodoColumn(QTreeWidget):
-    def __init__(self, title, kanban_board=None):
+    def __init__(self, title, kanban_board):
         super().__init__()
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
@@ -735,19 +751,25 @@ class TodoColumn(QTreeWidget):
                     self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_task_id, "child_id": drag_item_task_id, "is_treed": 0}) 
             else:
                 drop_item_task_id = drop_item.data(0, Qt.ItemDataRole.UserRole)
-                if drag_item.hasParent():
+                if drop_item.childCount() > 0 and drop_item.isExpanded():
+                    result = add_subtask_to_db_by_api(drop_item_task_id, drag_item_task_id, is_treed=1)
+                    assert result, "データベースの追加でエラー"
+                    subtask_id = result["subtaskId"]
+                    if result["type"] == "local":
+                        self.kanban_board.on_post_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
+                elif drag_item.has_parent_task():
                     subtask_id, parent_drag_item_task_id, _, _ = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
                     if drop_item_task_id == parent_drag_item_task_id:
                         result = update_subtask_in_db_by_api(subtask_id, drop_item_task_id, drag_item_task_id, is_treed=1)
                         assert result, "データベースの更新でエラー"
                         if result["type"] == "local":
                             self.kanban_board.on_update_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
-                elif drop_item.isExpanded():
-                    result = add_subtask_to_db_by_api(drop_item_task_id, drag_item_task_id, is_treed=1)
-                    assert result, "データベースの追加でエラー"
-                    subtask_id = result["subtaskId"]
-                    if result["type"] == "local":
-                        self.kanban_board.on_post_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
+                if self == event.source():
+                    drag_item_index = self.indexOfTopLevelItem(drag_item)
+                    drop_item_index = self.indexOfTopLevelItem(drop_item)
+                    self.takeTopLevelItem(drag_item_index)
+                    self.insertTopLevelItem(drop_item_index, drag_item)
+                    self.setCurrentItem(drag_item)
         else:
             if drag_item.parent():
                 subtask_data = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
@@ -757,61 +779,16 @@ class TodoColumn(QTreeWidget):
                     assert result, "データベースの更新でエラー"
                     if result["type"] == "local":
                         self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_task_id, "child_id": child_task_id, "is_treed": 0}) 
-        self.move_selected_item(drag_item_task_id, event.source())
-        return event.accept() 
-        #if self != event.source():
-        #    if drop_item:
-        #        if drag_item.parent():
-        #            subtask_id, parent_task_id, child_task_id, _ = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
-        #            result = update_subtask_in_db_by_api(subtask_id, parent_task_id, child_task_id, is_treed=0)
-        #            assert result, "データベースの更新でエラー"
-        #            if result["type"] == "local":
-        #                self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_task_id, "child_id": drag_item_task_id, "is_treed": 0}) 
-        #        else:
-        #            drop_item_task_id = drop_item.data(0, Qt.ItemDataRole.UserRole)
-        #            if drag_item.hasParent():
-        #                subtask_id, parent_drag_item_task_id, _, _ = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
-        #                if drop_item_task_id == parent_drag_item_task_id:
-        #                    result = update_subtask_in_db_by_api(subtask_id, drop_item_task_id, drag_item_task_id, is_treed=1)
-        #                    assert result, "データベースの更新でエラー"
-        #                    if result["type"] == "local":
-        #                        self.kanban_board.on_update_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
-        #            elif drop_item.isExpanded():
-        #                result = add_subtask_to_db_by_api(drop_item_task_id, drag_item_task_id, is_treed=1)
-        #                assert result, "データベースの追加でエラー"
-        #                subtask_id = result["subtaskId"]
-        #                if result["type"] == "local":
-        #                    self.kanban_board.on_post_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
-        #    else:
-        #        if drag_item.parent():
-        #            subtask_data = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
-        #            if subtask_data:
-        #                subtask_id, parent_task_id, child_task_id, _ = subtask_data
-        #                result = update_subtask_in_db_by_api(subtask_id, parent_task_id, child_task_id, is_treed=0)
-        #                assert result, "データベースの更新でエラー"
-        #                if result["type"] == "local":
-        #                    self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_task_id, "child_id": child_task_id, "is_treed": 0}) 
-        #    self.move_selected_item(drag_item_task_id, event.source())
-        #    return event.accept()
-        #else: 
-        #    if drag_item_row == -1:
-        #        parent_task_id = parent_drag_item.data(0, Qt.ItemDataRole.UserRole) 
-        #        child_task_id = drag_item.data(0, Qt.ItemDataRole.UserRole) 
-        #        subtask_id, _, _, _ = get_subtask_by_parentid_and_childid_from_db(parent_task_id, child_task_id)
-        #        result = update_subtask_in_db_by_api(subtask_id, parent_task_id, child_task_id, is_treed=0)
-        #        assert result, "データベースの更新でエラー"
-        #    else:
-        #        if drop_item and drop_item.isExpanded():
-        #            drop_item_id = drop_item.data(0, Qt.ItemDataRole.UserRole) 
-        #            subtask = get_subtask_by_childid_from_db(drag_item_id)
-        #            if subtask:
-        #                subtask_id, _, _, _ = subtask
-        #                result = update_subtask_in_db_by_api(subtask_id, drop_item_id, drag_item_id, is_treed=1)
-        #                assert result, "データベースの更新でエラー"
-        #            else:
-        #                result = add_subtask_to_db_by_api(drop_item_id, drag_item_id)
-        #                assert result, "データベースの追加でエラー"
-        #    return super().dropEvent(event)
+            if self == event.source():
+                drag_item_index = self.indexOfTopLevelItem(drag_item)
+                self.takeTopLevelItem(drag_item_index)
+                self.insertTopLevelItem(self.topLevelItemCount(), drag_item)
+                self.setCurrentItem(drag_item)
+        if self != event.source():
+            event.source().takeTopLevelItem(event.source().indexOfTopLevelItem(drag_item))
+            self.addTopLevelItem(drag_item)
+            self.move_selected_item(drag_item, event.source())
+        return 
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Delete:
@@ -823,7 +800,7 @@ class TodoColumn(QTreeWidget):
             if selected_item:
                 if self.editing_item:
                     self.stop_editing(selected_item)
-                    selected_item.setText(selected_item.title)
+                    selected_item.setText(selected_item.name)
                 self.clearSelection()
                 self.clearFocus()
                 return
@@ -845,12 +822,30 @@ class TodoColumn(QTreeWidget):
                 selected_item = self.currentItem()
                 if selected_item:
                     self.show_popup_item(selected_item)
-                    self.kanban_board.hide()
+                    self.kanban_board.close()
+            if event.key() == Qt.Key.Key_Up:
+                selected_item = self.currentItem()
+                if selected_item:
+                    index = self.indexOfTopLevelItem(selected_item)
+                    if index > 0 and index != -1:
+                        self.takeTopLevelItem(index)
+                        self.insertTopLevelItem(index - 1, selected_item)
+                        self.clearSelection()
+                        selected_item.setSelected(True)
+                        self.setCurrentItem(selected_item)
+                        return
+            if event.key() == Qt.Key.Key_Down:
+                selected_item = self.currentItem()
+                if selected_item:
+                    index = self.indexOfTopLevelItem(selected_item)
+                    if index < self.topLevelItemCount() - 1 and index != -1:
+                        self.takeTopLevelItem(index)
+                        self.insertTopLevelItem(index + 1, selected_item)
         return super().keyPressEvent(event)
 
     def start_editing(self, item):
         self.openPersistentEditor(item)
-        item.editText(item.title)
+        item.editText(item.name)
         self.editing_item = item
 
     def stop_editing(self, item):
@@ -862,16 +857,16 @@ class TodoColumn(QTreeWidget):
         super().focusOutEvent(event)
 
     def show_popup_item(self, item):
-        popup_task_window = self.get_popup_window(item)
+        popup_task_window = PopupTaskWindow(item)
         if self.kanban_board.popup_window:
-            if popup_task_window.get_id() == self.kanban_board.popup_window.get_id():
+            if popup_task_window.task_id == self.kanban_board.popup_window.task_id:
                 self.kanban_board.popup_window.raise_()
                 return
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
         popup_task_window.task_timer.start_timer()
-        self.kanban_board.popup_window = popup_task_window
+        self.kanban_board.poup_window = popup_task_window
 
     def mouseMoveEvent(self, event):
         if event.type() == QEvent.Type.MouseMove:
@@ -912,8 +907,11 @@ class TodoColumn(QTreeWidget):
         menu = QMenu(self)
         pin_action = menu.addAction("ピンを解除" if is_pinned else "ピン留め")
         mark_action = menu.addAction("マークを解除" if is_marked else "マーク")
-        hidden_item_action = menu.addAction("非表示")
+        hidden_item_action = menu.addAction("表示" if is_disable else "非表示")
         move2top_action = menu.addAction("トップへ")
+        move2bottom_action = menu.addAction("ボトムへ")
+        move2parent_action = menu.addAction("親タスクへ戻る") 
+        disable2parent_action = menu.addAction("親タスクを解除")
         action = menu.exec(self.mapToGlobal(position))
         if action == pin_action:
             self.toggle_pin_item(item)
@@ -924,13 +922,30 @@ class TodoColumn(QTreeWidget):
         elif action == move2top_action:
             self.takeTopLevelItem(self.indexOfTopLevelItem(item))
             self.insertTopLevelItem(0, item)
+        elif action == move2bottom_action:
+            self.takeTopLevelItem(self.indexOfTopLevelItem(item))
+            self.insertTopLevelItem(self.topLevelItemCount(), item)
+        elif action == move2parent_action:
+            if item.has_parent_task():
+                subtask_id, parent_id, child_id, is_treed = get_subtask_by_childid_from_db(item.id)
+                result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=1)
+                assert result, "データベースの更新でエラー"
+                if result["type"] == "local":
+                    self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": 1}) 
+        elif action == disable2parent_action:
+            if item.has_parent_task():
+                subtask_id, parent_id, child_id, is_treed = get_subtask_by_childid_from_db(item.id)
+                result = delete_subtask_from_db_by_api(subtask_id)
+                assert result, "データベースの削除でエラー"
+                if result["type"] == "local":
+                    self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": is_treed}) 
         self.clearFocus()
 
     def toggle_pin_item(self, item):
         (pin_id, id_, is_pinned) = self.get_pin_data(item)
         if is_pinned:
             self.update_pin_data((pin_id, id_, False))
-            item.setText(item.title)
+            item.setText(item.name)
             column = item.treeWidget()
             current_row = column.indexOfTopLevelItem(column.currentItem())
             for row in range(current_row + 1, column.topLevelItemCount()):
@@ -942,20 +957,28 @@ class TodoColumn(QTreeWidget):
                     break
         else:
             self.update_pin_data((pin_id, id_, True))
-            item.setText(item.title)
+            item.setText(item.name)
             self.takeTopLevelItem(self.indexOfTopLevelItem(item))
             self.insertTopLevelItem(0, item)  
 
     def toggle_mark_item(self, item):
         (mark_id, id_, is_marked) = self.get_mark_data(item)
         self.update_mark_data(item, (mark_id, id_, not is_marked))
-        item.setText(item.title)
+        item.setText(item.name)
 
     def toggle_display_item(self, item):
         (display_id, task_id, disable) = self.get_display_data(item)
         disable = not disable
         self.update_display_data(item, (display_id, task_id, disable))
         item.setHidden(disable)
+
+        subtask = get_subtask_by_childid_from_db(item.id)
+        if subtask:
+            subtask_id, parent_id, child_id, _ = subtask
+            result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=0 if disable else 1)
+            assert result, "データベースの更新でエラー"
+            if result["type"] == "local":
+                self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_id, "child_id": task_id, "is_treed": 0 if disable else 1})
 
     def copy_item(self):
         selected_item = self.currentItem()
@@ -988,7 +1011,8 @@ class TodoColumn(QTreeWidget):
         if result["type"] == "local":
             self.kanban_board.on_post_task({"taskId": task_id, "name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline, "task_type": task_type, "status_name": status_name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
 
-    def move_selected_item(self, task_id, source_column):
+    def move_selected_item(self, item, source_column):
+        task_id = item.data(0, Qt.ItemDataRole.UserRole) 
         task_name, task_goal, task_detail, task_deadline_date, task_type, _, waiting_task, remind_date, remind_input = get_task_from_db(task_id)
         new_task = (task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, self.id, waiting_task, remind_date, remind_input)
         result = update_task_in_db_by_api(new_task)
@@ -1036,10 +1060,6 @@ class TodoColumn(QTreeWidget):
         for task2label_id, _, label_name, _, _ in task2labels:
             if label_name.startswith("Done:"):
                 delete_task2label_from_db(task2label_id)
-
-    def get_popup_window(self, item):
-        task_id = item.data(0, Qt.ItemDataRole.UserRole) 
-        return PopupTaskWindow(item, self.kanban_board, task_id=task_id)
 
     def get_pin_data(self, item):
         id_ = item.data(0, Qt.ItemDataRole.UserRole) 
@@ -1089,16 +1109,19 @@ class TodoColumn(QTreeWidget):
         marked_label = "marked"
         delete_task2label_by_labelname_from_db(marked_label)
     
-    def count_items(self):
-        return self.count_all_items(self.invisibleRootItem())
+    def count_all_items(self):
+        return len(self.get_all_items())
 
-    def get_child_items(self, parent_item):
-        child_items = []
-        for i in range(parent_item.childCount()):
-            child_item = parent_item.child(i)
-            child_items.extend(self.get_child_items(child_item))
-        return child_items
-    
+    def get_all_items(self):
+        items = []
+        for parent_item_idx in range(self.topLevelItemCount()):
+            parent_item = self.topLevelItem(parent_item_idx)
+            if not parent_item.is_disable():
+                items.append(parent_item)
+                child_items = parent_item.get_child_items()
+                items.extend(child_items)
+        return items
+
 class TodoBoard(QWidget):
     def __init__(self):
         super().__init__()
@@ -1180,13 +1203,13 @@ class TodoBoard(QWidget):
 
     def load_tasks(self):
         self.load_items()
-        self.columns["TODO"].expandAll()
         for (column_name, search_box) in self.search_boxes.items():
             search_box.count_items(self.columns[column_name])
         self.sort_items_in_columns()
         self.sort_items_in_columns_by_deadline()
         self.sort_pin_items()
         self.set_search_bar()
+        self.columns["TODO"].expandAll()
 
     def remove_item_in_column(self, task_id):
         item = self.search_item(task_id)
@@ -1274,10 +1297,10 @@ class TodoBoard(QWidget):
             column = self.columns[column_name]
             for idx in range(column.topLevelItemCount()): 
                 item = column.topLevelItem(idx)
-                id_ = item.data(0, Qt.ItemDataRole.UserRole) 
+                task_id = item.data(0, Qt.ItemDataRole.UserRole) 
                 deadline = self.get_deadline(item)
                 weekdays_diff = self.get_due_date(deadline)
-                deadlines[id_] = weekdays_diff
+                deadlines[task_id] = weekdays_diff
             for deadline_color in [0, 1, 3]:
                 for source_idx in range(column.topLevelItemCount()):
                     source_item = column.topLevelItem(source_idx)
@@ -1316,14 +1339,13 @@ class TodoBoard(QWidget):
 
     def search_item(self, target_id):
         for column in self.columns.values():
-            for i in range(column.topLevelItemCount()):
-                item = column.topLevelItem(i)
+            for item in column.get_all_items():
                 source_id = item.data(0, Qt.ItemDataRole.UserRole) 
                 if target_id == source_id:
                     return item
         return None
 
-    def calc_priority(self, id_, deadline_date):
+    def calc_priority(self, task_id, deadline_date):
         priority = 0
         if deadline_date:
             weekdays_diff = self.get_due_date(deadline_date)
@@ -1333,12 +1355,12 @@ class TodoBoard(QWidget):
                 priority += 100
             elif weekdays_diff <= 3:
                 priority += 10
-        self.items_priority[id_] = priority
+        self.items_priority[task_id] = priority
 
-        labels = get_alllabel_by_taskid_from_db(id_)
+        labels = get_alllabel_by_taskid_from_db(task_id)
         for _, _, _, label_point in labels:
             priority += label_point
-        self.items_priority[id_] = priority
+        self.items_priority[task_id] = priority
         return priority
 
     def setup_shortcuts(self):
@@ -1353,7 +1375,7 @@ class TodoBoard(QWidget):
                 item = column.current_item
                 if item:
                     column.show_popup_item(item)
-                    self.hide()
+                    self.close()
                     return
         if event.key() == Qt.Key.Key_Escape:
             self.close()
@@ -1411,6 +1433,7 @@ class TodoBoard(QWidget):
             parent_item.addChild(child_item)
         else:
             child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
+            self.insert_item_in_column(child_item)
 
     def on_update_subtask(self, subtask_id, subtask_data): 
         parent_id = subtask_data['parent_id']
@@ -1429,17 +1452,25 @@ class TodoBoard(QWidget):
             parent_item.addChild(child_item)
             child_item.setIcon(0, QIcon())
         else:
-            child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
+            preparent_tree = child_item.parent()
+            if preparent_tree:
+                preparent_tree.removeChild(child_item)
             (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
             self.columns[status_name].addTopLevelItem(child_item)
             self.insert_item_in_column(child_item)
+            child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
 
     def on_delete_subtask(self, subtask_id, subtask_data):
         parent_id = subtask_data['parent_id']
         child_id = subtask_data['child_id']
+        is_treed = subtask_data['is_treed']
         parent_item = self.id2item[parent_id]
         child_item = self.id2item[child_id]
-        parent_item.removeChild(child_item)
+        if is_treed:
+            (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(child_id)
+            self.columns[status_name].addTopLevelItem(child_item)
+            parent_item.removeChild(child_item)
+        child_item.setIcon(0, QIcon())
 
     def on_post_task(self, task_data):
         task = (task_data['taskId'], 
@@ -1471,9 +1502,8 @@ class TodoBoard(QWidget):
         item = self.search_item(task_id)
         if item:
             self.update_item(item, new_task)
-        column = self.columns[new_task_data["status_name"]]
-        search_box = self.search_boxes[new_task_data['status_name']]
-        search_box.count_items(column)
+        #self.search_boxes[old_task_data['status_name']].count_items(self.columns[old_task_data["status_name"]])
+        self.search_boxes[new_task_data['status_name']].count_items(self.columns[new_task_data["status_name"]])
 
     def on_delete_task(self, deleted_task_id):
         self.remove_item_in_column(deleted_task_id)
@@ -1488,7 +1518,7 @@ class TodoBoard(QWidget):
         for (_, parent_id, child_id, is_treed) in all_subtask:
             parent_item = self.id2item[parent_id]
             child_item = self.id2item[child_id]
-            if is_treed:
+            if is_treed and not child_item.is_disable():
                 child_tree = child_item.treeWidget()
                 child_tree.takeTopLevelItem(child_tree.indexOfTopLevelItem(child_item))
                 parent_item.addChild(child_item)
@@ -1499,7 +1529,6 @@ class TodoBoard(QWidget):
         for (_, task_id, _) in disable_tasks:
             item = self.id2item[task_id]
             item.setHidden(True)
-
 
     def update_repeatly_task(self, task):
         task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, status_name, waiting_task, remind_date, remind_input = task
@@ -1528,8 +1557,7 @@ class TodoBoard(QWidget):
         self.id2item[task_id] = item
         color = self.get_color(task_deadline)
         item.setForeground(0, color)
-        (_, _, disable) = get_display_by_taskid_from_db(item.id)
-        item.setHidden(disable)
+        item.setHidden(item.is_disable())
         item.setSizeHint(0, QSize(100, 50))
         self.calc_priority(task_id, task_deadline)
         self.columns[status_name].addTopLevelItem(item)
@@ -1542,10 +1570,7 @@ class TodoBoard(QWidget):
         item.setText(task_name)
         item.setForeground(0, color)
         self.calc_priority(task_id, task_deadline_date)
-        self.remove_item_in_column(task_id)
-        self.columns[status_name].addTopLevelItem(item)
         self.insert_item_in_column(item)
-        return item
 
     def open_add_task_dialog(self, column_name):
         dialog = TodoDialog(self)
@@ -2221,18 +2246,18 @@ class TodoDialog(QDialog):
         if not self.item:
             return
         self.move_to_doing_column()
-        self.kanban_board.hide()
-        self.close()
-        popup_task_window = self.get_popup_window()
+        popup_task_window = PopupTaskWindow(self.item)
         if self.kanban_board.popup_window:
-            if popup_task_window.get_id() == self.kanban_board.popup_window.get_id():
+            if popup_task_window.task_id == self.kanban_board.popup_window.task_id:
                 self.kanban_board.popup_window.raise_()
                 return
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
         popup_task_window.task_timer.start_timer()
-        self.kanban_board.popup_window = popup_task_window
+        self.kanban_board.poup_window = popup_task_window
+        self.kanban_board.close()
+        self.close()
     
     def add_subtask_table(self, task_data):
         (subtask_id, task_id, task_name, _, _, task_deadline, _, _, _, _, _) = task_data
@@ -2323,7 +2348,7 @@ class TodoDialog(QDialog):
         self.task_id = task_id
         for label_id in newlabels_id:
             add_task2label_in_db(task_id=task_id, label_id=label_id)
-        parent_id = self.parent_task.property("parent_id")
+        parent_id = self.parent_task.property("parent_task_id")
         if parent_id:
             result = add_subtask_to_db_by_api(parent_id, self.task_id)
             assert result, "データベースの追加でエラー"
@@ -2443,9 +2468,6 @@ class TodoDialog(QDialog):
             if result["type"] == "local":
                 self.kanban_board.on_update_task(self.task_id, {"name": self.checkpoint_content["name"], "goal": self.checkpoint_content["goal"], "detail": self.checkpoint_content["detail"], "deadline": self.checkpoint_content["deadline"], "task_type": self.checkpoint_content["task_type"], "status_name": "TODO", "waiting_task": self.checkpoint_content["waiting_task"], "remind_date": self.checkpoint_content["remind_date"], "remind_input": self.checkpoint_content["remind_input"]})
             self.checkpoint_content["status_id"] = self.status_combo.itemData(self.status_combo.currentIndex())
-
-    def get_popup_window(self):
-        return PopupTaskWindow(self.item, self.kanban_board, self.task_id)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return:
