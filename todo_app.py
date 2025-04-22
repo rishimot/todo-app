@@ -2649,6 +2649,8 @@ class ActionHistory:
         self.kanban_board = kanban_board
         self.undo_stack = []
         self.redo_stack = []
+        if not os.path.exists("pkl_files"):
+            os.makedirs("pkl_files")
         self.undo_stack_file = 'pkl_files/undo_stack.pkl'
         self.redo_stack_file = 'pkl_files/redo_stack.pkl'
         self.load_undo_stack()
