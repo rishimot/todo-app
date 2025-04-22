@@ -617,8 +617,13 @@ def delete_task_from_db_by_api(task_id):
     try:
         response = requests.delete(f"{SERVER_URL}/api/task/{task_id}")
         if response.status_code == 200:
-            result = {"type": "server", "taskId": response["taskId"]}
-    except:
+            response_data = response.json()
+            result = {"type": "server", "taskId": response_data["deletedTask"]}
+        else:
+            task_id = delete_task_from_db(task_id)
+            result = {"type": "local", "taskId": task_id}
+    except Exception as e:
+        print(e)
         task_id = delete_task_from_db(task_id)
         result = {"type": "local", "taskId": task_id}
 
@@ -760,6 +765,9 @@ def add_time_to_db_by_api(time_data):
         if response.status_code == 200:
             response_data = response.json()
             result = {"type": "server", "timeId": response_data["timeId"]}
+        else:
+            time_id = add_time_to_db(time_data)
+            result = {"type": "local", "timeId": time_id}
     except:
         time_id = add_time_to_db(time_data)
         result = {"type": "local", "timeId": time_id}
@@ -790,6 +798,9 @@ def delete_time_from_db_by_api(time_id):
         response = requests.delete(f"{SERVER_URL}/api/time/{time_id}")
         if response.status_code == 200:
             result = {"type": "server", "timeId": response["timeId"]}
+        else:
+            time_id = delete_task_from_db(time_id)
+            result = {"type": "local", "timeId": time_id}
     except:
         time_id = delete_task_from_db(time_id)
         result = {"type": "local", "timeId": time_id}
