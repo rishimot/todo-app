@@ -1708,6 +1708,8 @@ class PopUpTaskDetail(QDialog):
         n_shortcut.activated.connect(self.close)
         save_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_S), self)
         save_shortcut.activated.connect(self.update)
+        popup_item_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_M), self)
+        popup_item_shortcut.activated.connect(self.parent_detail.parent().show_popup_item)
 
     def update(self):
         self.parent_detail.setPlainText(self.task_detail.toPlainText())
