@@ -200,15 +200,8 @@ class DigitalTimer(QWidget):
             minutes = (self.time_elapsed % 3600) // 60
             seconds = self.time_elapsed % 60
             self.label.setText(f'/ {minutes:03}:{seconds:02}')
-            if self.time_elapsed == 0:
-                self.tray_icon.showMessage(
-                    "Notification",
-                    f"{self.duration_time // 60}分{self.duration_time % 60}秒が経ちました",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    1000
-                )
-                if self.break_time:
-                    self.stop_timer()
+            if self.break_time and self.time_elapsed == 0:
+                self.stop_timer()
         else:
             minutes = (-self.time_elapsed % 3600) // 60
             seconds = -self.time_elapsed % 60
