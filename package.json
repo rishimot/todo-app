@@ -4,7 +4,7 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node.exe server.js --config_path=C:\\Users\\S145053\\develop\\todo-app\\dist\\config.json",
+    "start": "node.exe server.js --config_path=C:\\Users\\Owner\\develop\\todo-app\\todo-app\\dist\\config.json",
     "install-service": "winser -i -a",
     "uninstall-service": "winser -r -x",
     "build": "electron-builder"
