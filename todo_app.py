@@ -532,6 +532,12 @@ class SearchBox(QWidget):
         if act.lower() == "all":
             for item in items:
                 item.setHidden(False)
+        if act.lower() == "expand":
+            for item in items:
+                item.setExpanded(True)
+        if act.lower() == "fold":
+            for item in items:
+                item.setExpanded(False)
 
     def count_items(self, column):
         items = []
@@ -1259,7 +1265,6 @@ class TodoBoard(QWidget):
         self.sort_items_in_columns_by_deadline()
         self.sort_pin_items()
         self.set_search_bar()
-        self.columns["TODO"].expandAll()
 
     def remove_item_in_column(self, task_id):
         item = self.search_item(task_id)
@@ -1544,7 +1549,9 @@ class TodoBoard(QWidget):
         item = self.search_item(task_id)
         if item:
             self.update_item(item, new_task)
-        self.search_boxes[new_task_data['status_name']].count_items(self.columns[new_task_data["status_name"]])
+        column = self.columns[new_task_data["status_name"]]
+        search_box = self.search_boxes[new_task_data["status_name"]]
+        search_box.count_items(column)
 
     def on_delete_task(self, deleted_task_id):
         self.remove_item_in_column(deleted_task_id)
@@ -1576,7 +1583,7 @@ class TodoBoard(QWidget):
 
     def update_repeatly_task(self, task):
         task_id, task_name, task_goal, task_detail, task_deadline_date, task_type, status_name, waiting_task, remind_date, remind_input = task
-        if ((task_type == "daily") or (status_name == "DONE" and task_type != "-")) and task_deadline_date and datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
+        if ((task_type != "-" and status_name == "DONE") or (task_type == "daily")) and task_deadline_date and datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M")  <= datetime.datetime.now():
             new_deadline = task_deadline_date
             if task_type == "daily":
                 new_deadline = (datetime.datetime.strptime(task_deadline_date, "%Y/%m/%d %H:%M") + datetime.timedelta(days=1)).strftime("%Y/%m/%d %H:%M") 
@@ -1609,10 +1616,12 @@ class TodoBoard(QWidget):
         return item
 
     def update_item(self, item, task):
-        task_id, task_name, _, _, task_deadline_date, _, _, _, _, _ = task
+        task_id, task_name, _, _, task_deadline_date, _, status_name, _, _, _ = task
         color = self.get_color(task_deadline_date)
         item.setText(task_name)
         item.setForeground(0, color)
+        item.treeWidget().takeTopLevelItem(item.treeWidget().indexOfTopLevelItem(item))
+        self.columns[status_name].addTopLevelItem(item)
         self.calc_priority(task_id, task_deadline_date)
         self.insert_item_in_column(item)
 
@@ -1681,6 +1690,9 @@ class TodoBoard(QWidget):
         _, _, _, deadline, _, _, _, _, _  = get_task_from_db(task_id)
         return deadline
 
+    def check_deadline_task(self):
+        pass
+
     def closeEvent(self, event):
         for column in self.columns.values():
             column.clear_item_detail()
@@ -1689,6 +1701,7 @@ class TodoBoard(QWidget):
             self.popup_window.kanban_board = None
         self.sio.disconnect()
         self.action_history.save()
+        self.check_deadline_task()
         return super().closeEvent(event)
     
 class PopUpTaskDetail(QDialog):
@@ -1904,7 +1917,7 @@ class TodoDialog(QDialog):
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle(f"{self.title}")
-        self.setGeometry(80, 30, 500, 600)
+        self.setGeometry(100, 50, 600, 700)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
         self.layouts = QFormLayout()
@@ -1931,7 +1944,7 @@ class TodoDialog(QDialog):
         self.task_deadline_date.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.task_deadline_time = QTimeEdit()
         self.task_deadline_time.timeChanged.connect(self.on_edit)
-        self.task_deadline_time.setTime(QTime(23, 59))
+        self.task_deadline_time.setTime(QTime(17, 45))
         deadline_layout.addWidget(self.task_deadline_date)
         deadline_layout.addWidget(self.task_deadline_time)
 
