@@ -405,8 +405,7 @@ class PopupTaskWindow(QDialog):
         super().mouseDoubleClickEvent(event)
     
     def check_doing_task(self):
-        _, _, _, _, _, new_status_name, _, _, _ = get_task_from_db(self.task_id)
-        if new_status_name != "DOING":
+        if self.item.get_status() != "DOING":
             self.close()
 
     def mousePressEvent(self, event):
