@@ -510,8 +510,7 @@ class SearchBox(QWidget):
         for item in items:
             if item.isHidden():
                 continue
-            task_id = item.data(0, Qt.ItemDataRole.UserRole) 
-            labels = get_alllabel_by_taskid_from_db(task_id=task_id)
+            labels = item.get_label()
             item.setHidden(not(is_exclude ^ any([label_name.find(tag_content) != -1 for _, label_name, _, _ in labels])))
 
     def _filter_act(self, act, items):
@@ -538,6 +537,11 @@ class SearchBox(QWidget):
         if act.lower() == "fold":
             for item in items:
                 item.setExpanded(False)
+        if act.lower() == "deadline":
+            for item in items:
+                if item.isHidden():
+                    continue
+                item.setHidden(not item.is_deadline())
 
     def count_items(self, column):
         items = []
@@ -654,7 +658,6 @@ class TodoItem(QTreeWidgetItem):
         return is_disable
     
     def is_deadline(self):
-        deadline_date = self.get_deadline()
         return self.get_due_date() <= 1
 
     def get_status(self):
@@ -1202,8 +1205,6 @@ class TodoColumn(QTreeWidget):
             })
         self.clearFocus()
 
-
-
     def count_all_items(self):
         return len(self.get_all_items())
 
@@ -1686,11 +1687,16 @@ class TodoBoard(QWidget):
         content = ""
         for status_name in ["TODO", "DOING", "WAITING"]:
             column = self.columns[status_name]
-            for idx in range(column.topLevelItemCount()):
-                item = column.topLevelItem(idx)
+            items = column.get_all_items()
+            for item in items:
                 if item.is_deadline():
                     content += f"#{item.id} {item.name}\n"
         if content != "":
+            self.search_boxes["TODO"].search_bar.setText("act:deadline")
+            self.search_boxes["DOING"].search_bar.setText("act:deadline")
+            self.search_boxes["WAITING"].search_bar.setText("act:deadline")
+            self.search_boxes["DONE"].search_bar.setText("act:off")
+
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle("Confirmation")
             msg_box.setText(f"今日が締め切りのタスク:\n{content}")
@@ -1921,7 +1927,7 @@ class TodoDialog(QDialog):
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle(f"{self.title}")
-        self.setGeometry(100, 50, 600, 700) # (80, 30, 500, 600)
+        self.setGeometry(100, 50, 600, 700) #(80, 30, 500, 600) 
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
         self.layouts = QFormLayout()
@@ -1948,7 +1954,7 @@ class TodoDialog(QDialog):
         self.task_deadline_date.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.task_deadline_time = QTimeEdit()
         self.task_deadline_time.timeChanged.connect(self.on_edit)
-        self.task_deadline_time.setTime(QTime(17, 45))
+        self.task_deadline_time.setTime(QTime(23, 59))
         deadline_layout.addWidget(self.task_deadline_date)
         deadline_layout.addWidget(self.task_deadline_time)
 
