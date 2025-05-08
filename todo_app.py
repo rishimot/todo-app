@@ -652,10 +652,18 @@ class TodoItem(QTreeWidgetItem):
     def is_disable(self):
         (_, _, is_disable) = get_display_by_taskid_from_db(self.id)
         return is_disable
+    
+    def is_deadline(self):
+        deadline_date = self.get_deadline()
+        return self.get_due_date() <= 1
 
     def get_status(self):
         (_, _, _, _, _, status_name, _, _, _) = get_task_from_db(self.id)
         return status_name
+
+    def get_deadline(self):
+        (_, _, _, deadline, _, _, _, _, _) = get_task_from_db(self.id)
+        return deadline
 
     def get_content(self):
         task_name, _, _, deadline, _, status_name, waiting_task, _, _ = get_task_from_db(self.id)
@@ -686,13 +694,46 @@ class TodoItem(QTreeWidgetItem):
             self.detail_label = None
     
     def setText(self, atext):
-        self.title = atext
+        self.name = atext
         is_pinned = self.is_pinned()
         is_marked = self.is_marked()
-        title = f"#{self.id} {atext}"
-        title = f"📌{title}" if is_pinned else title
-        title = f"★{title}" if is_marked else title
-        return super().setText(0, title)
+        set_text = f"#{self.id} {atext}"
+        set_text = f"📌{set_text}" if is_pinned else set_text
+        set_text = f"★{set_text}" if is_marked else set_text
+        return super().setText(0, set_text)
+
+    def set_label(self, target_label):
+        label = get_label_by_name_from_db(target_label)
+        if label:
+            label_id, _, _, _ = label
+        else:
+            label_color = generate_random_color()
+            label_id = add_label_to_db(target_label, label_color)
+        add_task2label_in_db(task_id=self.id, label_id=label_id)
+
+    def delete_label(self, target_label):
+        task2labels = get_task2label_by_taskid_from_db(self.id)
+        for task2label_id, _, label_name, _, _ in task2labels:
+            if label_name == target_label:
+                delete_task2label_from_db(task2label_id)
+
+    def delete_complete_label(self):
+        task2labels = get_task2label_by_taskid_from_db(self.id)
+        for task2label_id, _, label_name, _, _ in task2labels:
+            if label_name.startswith("DONE:"):
+                delete_task2label_from_db(task2label_id)
+
+    def get_pin_data(self):
+        return get_pin_by_taskid_from_db(self.id)
+
+    def get_mark_data(self):
+        return get_mark_by_taskid_from_db(self.id)
+
+    def get_display_data(self):
+        return get_display_by_taskid_from_db(self.id)
+
+    def update_pin_data(self, pin_data):
+        update_pin_task_to_db(pin_data)
 
     def editText(self, atext):
         return super().setText(0, atext)
@@ -712,6 +753,67 @@ class TodoItem(QTreeWidgetItem):
                 child_items.append(child_item)
                 child_items.extend(child_item.get_child_items())
         return child_items
+
+    def get_subtask(self):
+        return get_subtask_by_childid_from_db(self.id)
+
+    def get_due_date(self):
+        deadline_date = self.get_deadline()
+        if deadline_date:
+            deadline_date = datetime.datetime.strptime(deadline_date, "%Y/%m/%d %H:%M")
+            now = datetime.datetime.now() 
+            due_date = count_weekdays(now, deadline_date)
+        else:
+            due_date = float('inf')
+        return due_date 
+
+    def get_color(self):
+        weekdays_diff = self.get_due_date()
+        if weekdays_diff <= 0:
+            color = QColor(0, 0, 0)
+        elif weekdays_diff <= 1:
+            color = QColor(255, 0, 0)
+        elif weekdays_diff <= 3:
+            color = QColor(255, 150, 0)
+        else:
+            color = QColor(0, 0, 255)
+        return color
+
+    def get_label(self):
+        return get_alllabel_by_taskid_from_db(self.id)
+
+    def get_priority(self):
+        priority = 0
+        weekdays_diff = self.get_due_date()
+        if weekdays_diff <= 0:
+            priority += float('inf')
+        elif weekdays_diff <= 1:
+            priority += 100
+        elif weekdays_diff <= 3:
+            priority += 10
+        labels = self.get_label()
+        for _, _, _, label_point in labels:
+            priority += label_point
+        return priority
+
+    def update_color(self):
+        self.setForeground(0, self.get_color())
+
+    def update_mark_data(self, mark_data):
+        label_name = "MARKED"
+        if self.is_marked():
+            self.set_label(label_name)
+        else:
+            self.delete_label(label_name)
+        update_mark_task_to_db(mark_data)
+
+    def update_display_data(self, display_data):
+        label_name = "DISABLE"
+        if self.is_disable():
+            self.set_label(label_name)
+        else:
+            self.delete_label(label_name)
+        update_display_task_to_db(display_data)
 
 class TodoColumn(QTreeWidget):
     def __init__(self, title, kanban_board):
@@ -754,7 +856,7 @@ class TodoColumn(QTreeWidget):
         drag_item_task_id = drag_item.data(0, Qt.ItemDataRole.UserRole)
         if drop_item:
             if drag_item.parent():
-                subtask_id, parent_task_id, child_task_id, _ = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
+                subtask_id, parent_task_id, child_task_id, _ = drag_item.get_subtask()
                 result = update_subtask_in_db_by_api(subtask_id, parent_task_id, child_task_id, is_treed=0)
                 assert result, "データベースの更新でエラー"
                 if result["type"] == "local":
@@ -768,7 +870,7 @@ class TodoColumn(QTreeWidget):
                     if result["type"] == "local":
                         self.kanban_board.on_post_subtask(subtask_id, {"parent_id": drop_item_task_id, "child_id": drag_item_task_id, "is_treed": 1}) 
                 elif drag_item.has_parent_task():
-                    subtask_id, parent_drag_item_task_id, _, _ = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
+                    subtask_id, parent_drag_item_task_id, _, _ = drag_item.get_subtask()
                     if drop_item_task_id == parent_drag_item_task_id:
                         result = update_subtask_in_db_by_api(subtask_id, drop_item_task_id, drag_item_task_id, is_treed=1)
                         assert result, "データベースの更新でエラー"
@@ -782,7 +884,7 @@ class TodoColumn(QTreeWidget):
                     self.setCurrentItem(drag_item)
         else:
             if drag_item.parent():
-                subtask_data = get_subtask_by_childid_from_db(child_id=drag_item_task_id)
+                subtask_data = drag_item.get_subtask()
                 if subtask_data:
                     subtask_id, parent_task_id, child_task_id, _ = subtask_data
                     result = update_subtask_in_db_by_api(subtask_id, parent_task_id, child_task_id, is_treed=0)
@@ -934,7 +1036,7 @@ class TodoColumn(QTreeWidget):
             move2parent_action = disable_parent_action = None
         menu.addMenu(move_menu)
 
-        expand_childtask_action = menu.addAction("展開" if len(item.get_child_tasks()) > 0 else "折りたたむ")
+        expand_childtask_action = menu.addAction("展開/折りたたみ")
 
         action = menu.exec(self.mapToGlobal(position))
         if action == pin_action:
@@ -964,11 +1066,11 @@ class TodoColumn(QTreeWidget):
                 if result["type"] == "local":
                     self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": is_treed}) 
         elif action == priority_middle_action:
-            self.set_marked_label(item, label_name="優先度中")
+            item.set_label("優先度中")
         elif action == priority_low_action:
-            self.set_marked_label(item, label_name="優先度低")
+            item.set_label("優先度低")
         elif action == expand_childtask_action:
-            pass
+            item.setExpanded(not item.isExpanded())
         self.clearFocus()
 
     def toggle_pin_item(self, item):
@@ -992,17 +1094,16 @@ class TodoColumn(QTreeWidget):
             self.insertTopLevelItem(0, item)  
 
     def toggle_mark_item(self, item):
-        (mark_id, id_, is_marked) = self.get_mark_data(item)
-        self.update_mark_data(item, (mark_id, id_, not is_marked))
+        (mark_id, id_, is_marked) = item.get_mark_data()
+        self.update_mark_data((mark_id, id_, not is_marked))
         item.setText(item.name)
 
     def toggle_display_item(self, item):
-        (display_id, task_id, disable) = self.get_display_data(item)
-        disable = not disable
-        self.update_display_data(item, (display_id, task_id, disable))
+        (display_id, task_id, disable) = item.get_display_data()
+        item.update_display_data((display_id, task_id, not disable))
         item.setHidden(disable)
 
-        subtask = get_subtask_by_childid_from_db(item.id)
+        subtask = item.get_subtask()
         if subtask:
             subtask_id, parent_id, child_id, _ = subtask
             result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=0 if disable else 1)
@@ -1049,7 +1150,7 @@ class TodoColumn(QTreeWidget):
         subtask = get_subtask_by_childid_from_db(child_id=item.id) 
         if subtask:
             subtask_id, parent_id, _, _ = subtask
-            parent_task_item = self.kanban_board.id2item[parent_id]
+            parent_task_item = self.kanban_board.search_item(parent_id)
             dialog.parent_task = QPushButton(parent_task_item.text(0))
             dialog.parent_task.setProperty("parent_task_id", parent_id)
             dialog.parent_task.setProperty("subtask_id", subtask_id)
@@ -1077,9 +1178,9 @@ class TodoColumn(QTreeWidget):
             self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline_date, "task_type": task_type, "status_name": self.name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
 
         if self.name == "DONE":
-            self.set_complete_label(task_id)
+            item.set_label("DONE:" + datetime.datetime.now().strftime("%Y/%m/%d"))
         elif source_column.name == "DONE":
-            self.delete_complete_label(task_id)
+            item.delete_complete_label()
         
     def delete_selected_item(self, selected_items):
         for selected_item in selected_items:
@@ -1101,70 +1202,8 @@ class TodoColumn(QTreeWidget):
             })
         self.clearFocus()
 
-    def set_complete_label(self, task_id):
-        complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
-        label = get_label_by_name_from_db(complete_date)
-        if label:
-            label_id, _, _, _ = label
-        else:
-            label_color = generate_random_color()
-            label_id = add_label_to_db(complete_date, label_color)
-        add_task2label_in_db(task_id=task_id, label_id=label_id)
 
-    def delete_complete_label(self, task_id):
-        task2labels = get_task2label_by_taskid_from_db(task_id)
-        for task2label_id, _, label_name, _, _ in task2labels:
-            if label_name.startswith("Done:"):
-                delete_task2label_from_db(task2label_id)
 
-    def get_pin_data(self, item):
-        id_ = item.data(0, Qt.ItemDataRole.UserRole) 
-        pin_data = get_pin_by_taskid_from_db(id_)
-        return pin_data
-
-    def get_mark_data(self, item):
-        id_ = item.data(0, Qt.ItemDataRole.UserRole) 
-        mark_data = get_mark_by_taskid_from_db(id_)
-        return mark_data
-
-    def get_display_data(self, item):
-        task_id = item.data(0, Qt.ItemDataRole.UserRole) 
-        display_data = get_display_by_taskid_from_db(task_id)
-        return display_data
-
-    def update_pin_data(self, pin_data):
-        update_pin_task_to_db(pin_data)
-
-    def update_mark_data(self, item, mark_data):
-        (_, _, is_marked) = mark_data
-        if is_marked:
-            self.set_marked_label(item, label_name="marked")
-        else:
-            delete_task2label_by_labelname_from_db("marked")
-        update_mark_task_to_db(mark_data)
-
-    def update_display_data(self, item, display_data):
-        (_, _, is_disable) = display_data
-        if is_disable:
-            self.set_marked_label(item, label_name="DISABLE")
-        else:
-            delete_task2label_by_labelname_from_db("DISABLE")
-        update_display_task_to_db(display_data)
-
-    def set_marked_label(self, item, label_name):
-        label = get_label_by_name_from_db(label_name)
-        if label:
-            label_id, _, _, _ = label
-        else:
-            label_color = generate_random_color()
-            label_id = add_label_to_db(label_name, label_color)
-        task_id = item.data(0, Qt.ItemDataRole.UserRole) 
-        add_task2label_in_db(task_id=task_id, label_id=label_id)
-
-    def delete_marked_label(self, item):
-        marked_label = "marked"
-        delete_task2label_by_labelname_from_db(marked_label)
-    
     def count_all_items(self):
         return len(self.get_all_items())
 
@@ -1282,7 +1321,7 @@ class TodoBoard(QWidget):
         for column in self.columns.values():
             for idx in range(column.topLevelItemCount()):
                 item = column.topLevelItem(idx)
-                (_, _, is_pinned) = column.get_pin_data(item)
+                is_pinned = item.is_pinned()
                 if is_pinned:
                     column.takeTopLevelItem(idx)
                     column.insertTopLevelItem(0, item)  
@@ -1355,10 +1394,7 @@ class TodoBoard(QWidget):
             column = self.columns[column_name]
             for idx in range(column.topLevelItemCount()): 
                 item = column.topLevelItem(idx)
-                task_id = item.data(0, Qt.ItemDataRole.UserRole) 
-                deadline = self.get_deadline(item)
-                weekdays_diff = self.get_due_date(deadline)
-                deadlines[task_id] = weekdays_diff
+                deadlines[item.id] = item.get_due_date()
             for deadline_color in [0, 1, 3]:
                 for source_idx in range(column.topLevelItemCount()):
                     source_item = column.topLevelItem(source_idx)
@@ -1372,49 +1408,8 @@ class TodoBoard(QWidget):
                             column.takeTopLevelItem(target_idx)
                             column.insertTopLevelItem(source_idx, target_item)
 
-    def get_due_date(self, deadline_date):
-        if deadline_date:
-            deadline_date = datetime.datetime.strptime(deadline_date, "%Y/%m/%d %H:%M")
-            now = datetime.datetime.now() 
-            weekdays_diff = count_weekdays(now, deadline_date)
-        else:
-            weekdays_diff = float('inf')
-        return weekdays_diff
-
-    def get_color(self, deadline_date):
-        if not deadline_date:
-            return QColor(0, 0, 255)
-        weekdays_diff = self.get_due_date(deadline_date)
-        if weekdays_diff <= 0:
-            color = QColor(0, 0, 0)
-        elif weekdays_diff <= 1:
-            color = QColor(255, 0, 0)
-        elif weekdays_diff <= 3:
-            color = QColor(255, 150, 0)
-        else:
-            color = QColor(0, 0, 255)
-        return color
-
     def search_item(self, target_id):
         return self.id2item[target_id] if target_id in self.id2item else None
-
-    def calc_priority(self, task_id, deadline_date):
-        priority = 0
-        if deadline_date:
-            weekdays_diff = self.get_due_date(deadline_date)
-            if weekdays_diff <= 0:
-                priority += float('inf')
-            elif weekdays_diff <= 1:
-                priority += 100
-            elif weekdays_diff <= 3:
-                priority += 10
-        self.items_priority[task_id] = priority
-
-        labels = get_alllabel_by_taskid_from_db(task_id)
-        for _, _, _, label_point in labels:
-            priority += label_point
-        self.items_priority[task_id] = priority
-        return priority
 
     def setup_shortcuts(self):
         undo_shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Key.Key_Z), self)
@@ -1478,8 +1473,8 @@ class TodoBoard(QWidget):
         parent_id = subtask_data['parent_id']
         child_id = subtask_data['child_id']
         is_treed = subtask_data['is_treed']
-        parent_item = self.id2item[parent_id]
-        child_item = self.id2item[child_id]
+        parent_item = self.search_item(parent_id)
+        child_item = self.search_item(child_id)
         if is_treed:
             child_tree = child_item.treeWidget()
             child_tree.takeTopLevelItem(child_tree.indexOfTopLevelItem(child_item))
@@ -1493,8 +1488,8 @@ class TodoBoard(QWidget):
         parent_id = subtask_data['parent_id']
         child_id = subtask_data['child_id']
         is_treed = subtask_data['is_treed']
-        parent_item = self.id2item[parent_id]
-        child_item = self.id2item[child_id]
+        parent_item = self.search_item(parent_id)
+        child_item = self.search_item(child_id)
 
         if is_treed:
             preparent_tree = child_item.parent()
@@ -1516,7 +1511,7 @@ class TodoBoard(QWidget):
     def on_delete_subtask(self, subtask_id, subtask_data):
         parent_id = subtask_data['parent_id']
         child_id = subtask_data['child_id']
-        child_item = self.id2item[child_id]
+        child_item = self.search_item(child_id)
         child_item.setIcon(0, QIcon())
 
     def on_post_task(self, task_data):
@@ -1564,8 +1559,8 @@ class TodoBoard(QWidget):
 
         all_subtask = get_allsubtask_from_db()
         for (_, parent_id, child_id, is_treed) in all_subtask:
-            parent_item = self.id2item[parent_id]
-            child_item = self.id2item[child_id]
+            parent_item = self.search_item(parent_id)
+            child_item = self.search_item(child_id)
             if child_item.get_status() == "DONE":
                 continue
             if is_treed and not child_item.is_disable():
@@ -1595,34 +1590,31 @@ class TodoBoard(QWidget):
             assert result, "データベースの更新でエラー"
             if result["type"] == "local":
                 self.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": new_deadline, "task_type": task_type, "status_name": "TODO", "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
-            task2labels = get_task2label_by_taskid_from_db(task_id)
-            for task2label_id, _, label_name, _, _ in task2labels:
-                if label_name.startswith("Done:"):
-                    delete_task2label_from_db(task2label_id)
+            item = self.search_item(task_id)
+            if item:
+                item.delete_complete_label()
             task = (task_id, task_name, task_goal, task_detail, new_deadline, task_type, "TODO", waiting_task, remind_date, remind_input)
         return task
 
     def create_item(self, task):
-        task_id, task_name, _, _, task_deadline, _, status_name, _, _, _ = task
+        task_id, task_name, _, _, _, _, status_name, _, _, _ = task
         item = TodoItem(task_name, task_id)
         self.id2item[task_id] = item
-        color = self.get_color(task_deadline)
-        item.setForeground(0, color)
+        item.update_color()
         item.setHidden(item.is_disable())
         item.setSizeHint(0, QSize(100, 50))
-        self.calc_priority(task_id, task_deadline)
+        self.items_priority[task_id] = item.get_priority()
         self.columns[status_name].addTopLevelItem(item)
         self.insert_item_in_column(item)
         return item
 
     def update_item(self, item, task):
-        task_id, task_name, _, _, task_deadline_date, _, status_name, _, _, _ = task
-        color = self.get_color(task_deadline_date)
+        task_id, task_name, _, _, _, _, status_name, _, _, _ = task
         item.setText(task_name)
-        item.setForeground(0, color)
+        item.update_color()
         item.treeWidget().takeTopLevelItem(item.treeWidget().indexOfTopLevelItem(item))
         self.columns[status_name].addTopLevelItem(item)
-        self.calc_priority(task_id, task_deadline_date)
+        self.items_priority[task_id] = item.get_priority()
         self.insert_item_in_column(item)
 
     def open_add_task_dialog(self, column_name):
@@ -1674,7 +1666,7 @@ class TodoBoard(QWidget):
         subtask = get_subtask_by_childid_from_db(child_id=task_id) 
         if subtask:
             subtask_id, parent_id, _, _ = subtask
-            parent_task_item = self.id2item[parent_id]
+            parent_task_item = self.search_item(parent_id)
             dialog.parent_task.setText(parent_task_item.text(0))
             dialog.parent_task.setProperty("parent_task_id", parent_id)
             dialog.parent_task.setProperty("subtask_id", subtask_id)
@@ -1691,7 +1683,19 @@ class TodoBoard(QWidget):
         return deadline
 
     def check_deadline_task(self):
-        pass
+        content = ""
+        for status_name in ["TODO", "DOING", "WAITING"]:
+            column = self.columns[status_name]
+            for idx in range(column.topLevelItemCount()):
+                item = column.topLevelItem(idx)
+                if item.is_deadline():
+                    content += f"#{item.id} {item.name}\n"
+        if content != "":
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle("Confirmation")
+            msg_box.setText(f"今日が締め切りのタスク:\n{content}")
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.exec()
 
     def closeEvent(self, event):
         for column in self.columns.values():
@@ -1699,9 +1703,9 @@ class TodoBoard(QWidget):
         
         if self.popup_window and self.popup_window.kanban_board:
             self.popup_window.kanban_board = None
-        self.sio.disconnect()
         self.action_history.save()
         self.check_deadline_task()
+        self.sio.disconnect()
         return super().closeEvent(event)
     
 class PopUpTaskDetail(QDialog):
@@ -1917,7 +1921,7 @@ class TodoDialog(QDialog):
     def init_ui(self):
         self.setWindowIcon(QIcon("icon/youhishi.ico"))
         self.setWindowTitle(f"{self.title}")
-        self.setGeometry(100, 50, 600, 700)
+        self.setGeometry(100, 50, 600, 700) # (80, 30, 500, 600)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowMinimizeButtonHint)
 
         self.layouts = QFormLayout()
@@ -2368,7 +2372,7 @@ class TodoDialog(QDialog):
     def open_edit_child_task_dialog(self, index):
         row = index.row()
         task_id = self.subtask_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        item = self.kanban_board.id2item[task_id]
+        item = self.kanban_board.search_item(task_id)
         self.kanban_board.open_edit_task_dialog(item)
 
     def open_search_child_task_display(self):
@@ -2383,7 +2387,7 @@ class TodoDialog(QDialog):
     def open_edit_parent_task_dialog(self):
         parent_task_id = self.parent_task.property("parent_task_id")
         if parent_task_id:
-            item = self.kanban_board.id2item[parent_task_id]
+            item = self.kanban_board.search_item(parent_task_id)
             self.kanban_board.open_edit_task_dialog(item)
 
     def open_search_parent_task_display(self):
@@ -2447,14 +2451,7 @@ class TodoDialog(QDialog):
                 self.kanban_board.on_post_subtask(subtask_id, {"parent_id": parent_id, "child_id": task_id, "is_treed": 1})
 
         if status_name == "DONE":
-            complete_date = "Done:" + datetime.datetime.now().strftime("%Y/%m/%d")
-            label = get_label_by_name_from_db(complete_date)
-            if label:
-                label_id, _, _, _ = label
-            else:
-                label_color = generate_random_color()
-                label_id = add_label_to_db(complete_date, label_color)
-            add_task2label_in_db(task_id=task_id, label_id=label_id)
+            self.item.set_label("DONE:" + datetime.datetime.now().strftime("%Y/%m/%d"))
         task2labels = get_task2label_by_taskid_from_db(task_id)
         task2labels_id = [task2label_id for task2label_id, _, _, _, _ in task2labels]
         labels_id = [label_id for _, label_id, _, _, _ in task2labels]
