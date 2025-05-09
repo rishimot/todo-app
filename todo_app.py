@@ -1077,10 +1077,10 @@ class TodoColumn(QTreeWidget):
         self.clearFocus()
 
     def toggle_pin_item(self, item):
-        (pin_id, id_, is_pinned) = self.get_pin_data(item)
+        (pin_id, id_, is_pinned) = item.get_pin_data()
+        item.update_pin_data((pin_id, id_, not is_pinned))
+        item.setText(item.name)
         if is_pinned:
-            self.update_pin_data((pin_id, id_, False))
-            item.setText(item.name)
             column = item.treeWidget()
             current_row = column.indexOfTopLevelItem(column.currentItem())
             for row in range(current_row + 1, column.topLevelItemCount()):
@@ -1091,8 +1091,6 @@ class TodoColumn(QTreeWidget):
                     column.insertTopLevelItem(column.indexOfTopLevelItem(source_item), item)
                     break
         else:
-            self.update_pin_data((pin_id, id_, True))
-            item.setText(item.name)
             self.takeTopLevelItem(self.indexOfTopLevelItem(item))
             self.insertTopLevelItem(0, item)  
 
@@ -1122,43 +1120,40 @@ class TodoColumn(QTreeWidget):
     def paste_item(self):
         if hasattr(self, 'copied_item'):
             item = self.copied_item
-            self.copy_selected_item(item) 
-
-    def copy_selected_item(self, item):
-        old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_task_type, old_status_name, old_waiting_task, old_remind_date, old_remind_input = get_task_from_db(item.id)
-        old_task2labels_id = get_task2label_by_taskid_from_db(item.id)
-        dialog = TodoDialog(self.kanban_board)
-        dialog.task_name.setText(old_task_name)
-        dialog.task_goal.setText(old_task_goal)
-        dialog.task_detail.setPlainText(old_task_detail)
-        if old_task_deadline:
-            old_task_deadline_date = old_task_deadline.split(" ")[0]
-            old_task_deadline_time = old_task_deadline.split(" ")[1]
-            old_task_deadline_hour = int(old_task_deadline_time.split(":")[0])
-            old_task_deadline_minutes = int(old_task_deadline_time.split(":")[1])
-            dialog.task_deadline_date.setText(old_task_deadline_date)
-            dialog.task_deadline_time.setTime(QTime(old_task_deadline_hour, old_task_deadline_minutes))
-        dialog.task_type.setCurrentText(old_task_type)
-        dialog.status_combo.setCurrentText(old_status_name) 
-        dialog.waiting_input.setText(old_waiting_task)
-        if old_remind_date:
-            old_remind_date = datetime.datetime.strptime(old_remind_date, "%Y/%m/%d %H:%M")
-            dialog.reminder.setChecked(True)
-            dialog.remind_timer.setDateTime(QDateTime(old_remind_date.date(), old_remind_date.time())) 
-            dialog.remind_input.setText(old_remind_input)
-        subtask_data = get_subtask_by_parentid_from_db(item.id)
-        for (subtask_id, _, child_id, _) in subtask_data:
-            child_task_data = get_task_from_db(child_id)
-            dialog.add_subtask_table((child_id, *child_task_data), subtask_id)
-        subtask = get_subtask_by_childid_from_db(child_id=item.id) 
-        if subtask:
-            subtask_id, parent_id, _, _ = subtask
-            parent_task_item = self.kanban_board.search_item(parent_id)
-            dialog.parent_task = QPushButton(parent_task_item.text(0))
-            dialog.parent_task.setProperty("parent_task_id", parent_id)
-            dialog.parent_task.setProperty("subtask_id", subtask_id)
-        dialog.display_labels(old_task2labels_id)
-        dialog.post_task()
+            old_task_name, old_task_goal, old_task_detail, old_task_deadline, old_task_type, old_status_name, old_waiting_task, old_remind_date, old_remind_input = get_task_from_db(item.id)
+            old_task2labels_id = get_task2label_by_taskid_from_db(item.id)
+            dialog = TodoDialog(self.kanban_board)
+            dialog.task_name.setText(old_task_name)
+            dialog.task_goal.setText(old_task_goal)
+            dialog.task_detail.setPlainText(old_task_detail)
+            if old_task_deadline:
+                old_task_deadline_date = old_task_deadline.split(" ")[0]
+                old_task_deadline_time = old_task_deadline.split(" ")[1]
+                old_task_deadline_hour = int(old_task_deadline_time.split(":")[0])
+                old_task_deadline_minutes = int(old_task_deadline_time.split(":")[1])
+                dialog.task_deadline_date.setText(old_task_deadline_date)
+                dialog.task_deadline_time.setTime(QTime(old_task_deadline_hour, old_task_deadline_minutes))
+            dialog.task_type.setCurrentText(old_task_type)
+            dialog.status_combo.setCurrentText(old_status_name)
+            dialog.waiting_input.setText(old_waiting_task)
+            if old_remind_date:
+                old_remind_date = datetime.datetime.strptime(old_remind_date, "%Y/%m/%d %H:%M")
+                dialog.reminder.setChecked(True)
+                dialog.remind_timer.setDateTime(QDateTime(old_remind_date.date(), old_remind_date.time()))
+                dialog.remind_input.setText(old_remind_input)
+            subtask_data = get_subtask_by_parentid_from_db(item.id)
+            for (subtask_id, _, child_id, _) in subtask_data:
+                child_task_data = get_task_from_db(child_id)
+                dialog.add_subtask_table((child_id, *child_task_data), subtask_id)
+            subtask = get_subtask_by_childid_from_db(child_id=item.id)
+            if subtask:
+                subtask_id, parent_id, _, _ = subtask
+                parent_task_item = self.kanban_board.search_item(parent_id)
+                dialog.parent_task = QPushButton(parent_task_item.text(0))
+                dialog.parent_task.setProperty("parent_task_id", parent_id)
+                dialog.parent_task.setProperty("subtask_id", subtask_id)
+            dialog.display_labels(old_task2labels_id)
+            dialog.post_task()
 
     def update_selected_item(self, item):
         task_id = item.data(0, Qt.ItemDataRole.UserRole) 
