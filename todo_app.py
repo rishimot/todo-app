@@ -533,15 +533,31 @@ class SearchBox(QWidget):
                 item.setHidden(False)
         if act.lower() == "expand":
             for item in items:
+                if item.isHidden():
+                    continue
                 item.setExpanded(True)
         if act.lower() == "fold":
             for item in items:
+                if item.isHidden():
+                    continue
                 item.setExpanded(False)
         if act.lower() == "deadline":
             for item in items:
                 if item.isHidden():
                     continue
                 item.setHidden(not item.is_deadline())
+                self._show_deadline_item(item)
+
+    def _show_deadline_item(self, item):
+        child_items = item.get_child_items()
+        for child_item in child_items:
+            if child_item.is_deadline():
+                child_item.setHidden(False)
+                item.setHidden(False)
+                item.setExpanded(True)
+            else:
+                child_item.setHidden(True)
+            self._show_deadline_item(child_item)
 
     def count_items(self, column):
         items = []
