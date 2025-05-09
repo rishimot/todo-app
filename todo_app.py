@@ -1299,6 +1299,7 @@ class TodoBoard(QWidget):
         self.sort_items_in_columns()
         self.sort_items_in_columns_by_deadline()
         self.sort_pin_items()
+        self.sort_marked_items()
         self.set_search_bar()
 
     def remove_item_in_column(self, task_id):
@@ -1317,8 +1318,15 @@ class TodoBoard(QWidget):
         for column in self.columns.values():
             for idx in range(column.topLevelItemCount()):
                 item = column.topLevelItem(idx)
-                is_pinned = item.is_pinned()
-                if is_pinned:
+                if item.is_pinned():
+                    column.takeTopLevelItem(idx)
+                    column.insertTopLevelItem(0, item)  
+
+    def sort_marked_items(self):
+        for column in self.columns.values():
+            for idx in range(column.topLevelItemCount()):
+                item = column.topLevelItem(idx)
+                if item.is_marked():
                     column.takeTopLevelItem(idx)
                     column.insertTopLevelItem(0, item)  
 
