@@ -721,13 +721,13 @@ class TodoItem(QTreeWidgetItem):
         set_text = f"★{set_text}" if is_marked else set_text
         return super().setText(0, set_text)
 
-    def set_label(self, target_label):
+    def set_label(self, target_label, point=0):
         label = get_label_by_name_from_db(target_label)
         if label:
             label_id, _, _, _ = label
         else:
             label_color = generate_random_color()
-            label_id = add_label_to_db(target_label, label_color)
+            label_id = add_label_to_db(target_label, label_color, point=point)
         add_task2label_in_db(task_id=self.id, label_id=label_id)
 
     def delete_label(self, target_label):
@@ -1041,6 +1041,7 @@ class TodoColumn(QTreeWidget):
         hidden_item_action = menu.addAction("表示" if is_disable else "非表示")
 
         priority_menu = QMenu("優先度", self)
+        priority_high_action = priority_menu.addAction("高")
         priority_middle_action = priority_menu.addAction("中")
         priority_low_action = priority_menu.addAction("低")
         menu.addMenu(priority_menu)
@@ -1084,8 +1085,10 @@ class TodoColumn(QTreeWidget):
                 assert result, "データベースの削除でエラー"
                 if result["type"] == "local":
                     self.kanban_board.on_delete_subtask(subtask_id, {"parent_id": parent_id, "child_id": child_id, "is_treed": is_treed}) 
+        elif action == priority_high_action:
+            item.set_label("優先度高", 10)
         elif action == priority_middle_action:
-            item.set_label("優先度中")
+            item.set_label("優先度中", 5)
         elif action == priority_low_action:
             item.set_label("優先度低")
         elif action == expand_childtask_action:
@@ -1112,13 +1115,13 @@ class TodoColumn(QTreeWidget):
 
     def toggle_mark_item(self, item):
         (mark_id, id_, is_marked) = item.get_mark_data()
-        self.update_mark_data((mark_id, id_, not is_marked))
+        item.update_mark_data((mark_id, id_, not is_marked))
         item.setText(item.name)
 
     def toggle_display_item(self, item):
         (display_id, task_id, disable) = item.get_display_data()
         item.update_display_data((display_id, task_id, not disable))
-        item.setHidden(disable)
+        item.setHidden(not disable)
 
         subtask = item.get_subtask()
         if subtask:
