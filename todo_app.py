@@ -1317,8 +1317,8 @@ class TodoBoard(QWidget):
             search_box.count_items(self.columns[column_name])
         self.sort_items_in_columns()
         self.sort_items_in_columns_by_deadline()
-        self.sort_pin_items()
         self.sort_marked_items()
+        self.sort_pin_items()
         self.set_search_bar()
 
     def remove_item_in_column(self, task_id):
