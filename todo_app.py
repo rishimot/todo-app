@@ -819,16 +819,18 @@ class TodoItem(QTreeWidgetItem):
         self.setForeground(0, self.get_color())
 
     def update_mark_data(self, mark_data):
+        (_, _, is_marked) = mark_data
         label_name = "MARKED"
-        if self.is_marked():
+        if is_marked:
             self.set_label(label_name)
         else:
             self.delete_label(label_name)
         update_mark_task_to_db(mark_data)
 
     def update_display_data(self, display_data):
+        (_, _, is_disable) = display_data
         label_name = "DISABLE"
-        if self.is_disable():
+        if is_disable:
             self.set_label(label_name)
         else:
             self.delete_label(label_name)
@@ -1122,14 +1124,6 @@ class TodoColumn(QTreeWidget):
         (display_id, task_id, disable) = item.get_display_data()
         item.update_display_data((display_id, task_id, not disable))
         item.setHidden(not disable)
-
-        subtask = item.get_subtask()
-        if subtask:
-            subtask_id, parent_id, child_id, _ = subtask
-            result = update_subtask_in_db_by_api(subtask_id, parent_id, child_id, is_treed=0 if disable else 1)
-            assert result, "データベースの更新でエラー"
-            if result["type"] == "local":
-                self.kanban_board.on_update_subtask(subtask_id, {"parent_id": parent_id, "child_id": task_id, "is_treed": 0 if disable else 1})
 
     def copy_item(self):
         selected_item = self.currentItem()
