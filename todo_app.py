@@ -1723,10 +1723,12 @@ class TodoBoard(QWidget):
         for column in self.columns.values():
             column.clear_item_detail()
         
-        if self.popup_window and self.popup_window.kanban_board:
-            self.popup_window.kanban_board = None
+        if self.popup_window:
+            if self.popup_window.kanban_board:
+                self.popup_window.kanban_board = None
+        else:
+            self.check_deadline_task()
         self.action_history.save()
-        self.check_deadline_task()
         self.sio.disconnect()
         return super().closeEvent(event)
     
@@ -2351,7 +2353,7 @@ class TodoDialog(QDialog):
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
         popup_task_window.task_timer.start_timer()
-        self.kanban_board.poup_window = popup_task_window
+        self.kanban_board.popup_window = popup_task_window
         self.kanban_board.close()
         self.close()
     
