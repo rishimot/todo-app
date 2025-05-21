@@ -201,8 +201,16 @@ class DigitalTimer(QWidget):
             minutes = (self.time_elapsed % 3600) // 60
             seconds = self.time_elapsed % 60
             self.label.setText(f'/ {minutes:03}:{seconds:02}')
-            if self.break_time and self.time_elapsed == 0:
-                self.stop_timer()
+            if self.time_elapsed == 0:
+                if self.break_time:
+                    self.stop_timer()
+                else:
+                    self.tray_icon.showMessage(
+                        "Notification",
+                        f"{self.duration_time // 60}分{self.duration_time % 60}秒が経ちました",
+                        QSystemTrayIcon.MessageIcon.Information,
+                        1000
+                    )
         else:
             minutes = (-self.time_elapsed % 3600) // 60
             seconds = -self.time_elapsed % 60
@@ -1345,6 +1353,7 @@ class TodoBoard(QWidget):
 
     def insert_item_in_column(self, item):
         target_id = item.data(0, Qt.ItemDataRole.UserRole) 
+        self.items_priority[target_id] = item.get_priority()
         column = item.treeWidget()
         for i in range(column.topLevelItemCount()): 
             source_item = column.topLevelItem(i)
@@ -1499,7 +1508,7 @@ class TodoBoard(QWidget):
             parent_item.addChild(child_item)
         else:
             child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
-            self.insert_item_in_column(child_item)
+            #self.insert_item_in_column(child_item)
 
     def on_update_subtask(self, subtask_id, subtask_data): 
         parent_id = subtask_data['parent_id']
@@ -1522,7 +1531,7 @@ class TodoBoard(QWidget):
             if preparent_tree:
                 preparent_tree.removeChild(child_item)
             self.columns[child_item.get_status()].addTopLevelItem(child_item)
-            self.insert_item_in_column(child_item)
+            #self.insert_item_in_column(child_item)
             child_item.setIcon(0, QIcon("image/arrow_color11_up.png"))
 
     def on_delete_subtask(self, subtask_id, subtask_data):
@@ -1620,9 +1629,8 @@ class TodoBoard(QWidget):
         item.update_color()
         item.setHidden(item.is_disable())
         item.setSizeHint(0, QSize(100, 50))
-        self.items_priority[task_id] = item.get_priority()
         self.columns[status_name].addTopLevelItem(item)
-        self.insert_item_in_column(item)
+        #self.insert_item_in_column(item)
         return item
 
     def update_item(self, item, task):
@@ -1631,8 +1639,7 @@ class TodoBoard(QWidget):
         item.update_color()
         item.treeWidget().takeTopLevelItem(item.treeWidget().indexOfTopLevelItem(item))
         self.columns[status_name].addTopLevelItem(item)
-        self.items_priority[task_id] = item.get_priority()
-        self.insert_item_in_column(item)
+        #self.insert_item_in_column(item)
 
     def open_add_task_dialog(self, column_name):
         dialog = TodoDialog(self)
