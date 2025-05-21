@@ -120,7 +120,7 @@ class DigitalTimer(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.label = QLabel(f'/ {self.setting_time:03}:00', self)
+        self.label = QLabel(f'/ {self.setting_time:02}:00', self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFixedHeight(30)
         self.label.mousePressEvent = lambda event: self.change_mode()
@@ -200,7 +200,7 @@ class DigitalTimer(QWidget):
         if self.time_elapsed >= 0:
             minutes = (self.time_elapsed % 3600) // 60
             seconds = self.time_elapsed % 60
-            self.label.setText(f'/ {minutes:03}:{seconds:02}')
+            self.label.setText(f'/ {minutes:02}:{seconds:02}' if not self.break_time else f'/ {minutes:02}:{seconds:02} (Break)')
             if self.time_elapsed == 0:
                 if self.break_time:
                     self.stop_timer()
@@ -245,7 +245,7 @@ class DigitalTimer(QWidget):
             self.start_time = None
             self.break_time = not self.break_time
         if self.break_time and self.mode == "CountDown":
-            self.label.setText(f'/ 5:00')
+            self.label.setText(f'/ 5:00 (Break)')
             self.start_timer(time=5)
         else:
             self.label.setText(f'/ {self.setting_time:02}:00' if self.mode == "CountDown" else "/ 00:00")
