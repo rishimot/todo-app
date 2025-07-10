@@ -100,12 +100,22 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 
+class DigitalTimerEditor(QLineEdit):
+    def disable(self):
+        self.clear()
+        self.setVisible(False)  
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.disable()
+        super().keyPressEvent(event) 
+
 class DigitalTimer(QWidget):
     def __init__(self, parent=None, task_id=None):
         super().__init__(parent)
         self.task_id = task_id
         self.action_id = ""
-        self.setting_time = 30
+        self.setting_time = 60
         self.button_size = (25, 25)
         self.mode = "CountDown"
         self.start_time = None
@@ -120,13 +130,24 @@ class DigitalTimer(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.label = QLabel(f'/ {self.setting_time:02}:00', self)
+
+        self.label = QLabel(f'/ {self.setting_time:03}:00', self)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.label.setFixedHeight(30)
-        self.label.mousePressEvent = lambda event: self.change_mode()
+        self.label.mousePressEvent = lambda event: self.start_edit_time() # lambda event: self.change_mode()
         layout.addWidget(self.label)
+
+        self.time_input = DigitalTimerEditor(self)
+        self.time_input.setFixedWidth(40)
+        self.time_input.setPlaceholderText("設定する分数を入力")
+        self.time_input.setText(f"{self.setting_time}") 
+        self.time_input.setVisible(False) 
+        self.time_input.returnPressed.connect(self.set_time_from_input)
+        layout.addWidget(self.time_input)
+
         self.start_button = self.createButton(self.saisei_pixmap, lambda event: self.start_timer())
         layout.addWidget(self.start_button)
+
         self.setLayout(layout)
 
         self.timer = QTimer()
@@ -153,6 +174,24 @@ class DigitalTimer(QWidget):
         button.setPixmap(pixmap)
         button.mousePressEvent = callback
         return button
+
+    def start_edit_time(self):
+        self.time_input.setText(str(self.setting_time)) 
+        self.time_input.setVisible(True) 
+        self.time_input.setFocus() 
+    
+    def set_time_from_input(self):
+        try:
+            input_time = int(self.time_input.text())
+            if input_time > 0:
+                self.setting_time = input_time
+                self.label.setText(f'/ {self.setting_time:03}:00')  
+            else:
+                self.label.setText("-")
+        except ValueError:
+            self.label.setText("x")
+        finally:
+            self.time_input.disable()
 
     def is_timer_running(self):
         return self.timer_running
@@ -200,7 +239,7 @@ class DigitalTimer(QWidget):
         if self.time_elapsed >= 0:
             minutes = (self.time_elapsed % 3600) // 60
             seconds = self.time_elapsed % 60
-            self.label.setText(f'/ {minutes:02}:{seconds:02}' if not self.break_time else f'/ {minutes:02}:{seconds:02} (Break)')
+            self.label.setText(f'/ {minutes:03}:{seconds:02}' if not self.break_time else f'/ {minutes:02}:{seconds:02} (Break)')
             if self.time_elapsed == 0:
                 if self.break_time:
                     self.stop_timer()
@@ -228,7 +267,7 @@ class DigitalTimer(QWidget):
         self.timer.stop()
         self.start_button.setPixmap(self.saisei_pixmap)
         self.start_button.mousePressEvent = lambda event: self.start_timer()
-        self.label.mousePressEvent = lambda event: self.change_mode()
+        #self.label.mousePressEvent = lambda event: self.change_mode()
         if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
             if not self.break_time:
@@ -255,6 +294,7 @@ class DigitalTimer(QWidget):
         self.label.setFixedHeight(20)
 
     def minimize(self):
+        self.time_input.disable()
         self.start_button.hide()
         self.label.setFixedHeight(10)
 
@@ -747,7 +787,7 @@ class TodoItem(QTreeWidgetItem):
     def delete_complete_label(self):
         task2labels = get_task2label_by_taskid_from_db(self.id)
         for task2label_id, _, label_name, _, _ in task2labels:
-            if label_name.startswith("DONE:"):
+            if label_name.startswith("Done:"):
                 delete_task2label_from_db(task2label_id)
 
     def get_pin_data(self):
@@ -1006,7 +1046,7 @@ class TodoColumn(QTreeWidget):
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
-        popup_task_window.task_timer.start_timer()
+        #popup_task_window.task_timer.start_timer()
         self.kanban_board.poup_window = popup_task_window
 
     def mouseMoveEvent(self, event):
@@ -1197,7 +1237,7 @@ class TodoColumn(QTreeWidget):
             self.kanban_board.on_update_task(task_id, {"name": task_name, "goal": task_goal, "detail": task_detail, "deadline": task_deadline_date, "task_type": task_type, "status_name": self.name, "waiting_task": waiting_task, "remind_date": remind_date, "remind_input": remind_input})
 
         if self.name == "DONE":
-            item.set_label("DONE:" + datetime.datetime.now().strftime("%Y/%m/%d"))
+            item.set_label("Done:" + datetime.datetime.now().strftime("%Y/%m/%d"))
         elif source_column.name == "DONE":
             item.delete_complete_label()
         
@@ -1634,7 +1674,7 @@ class TodoBoard(QWidget):
         return item
 
     def update_item(self, item, task):
-        task_id, task_name, _, _, _, _, status_name, _, _, _ = task
+        _, task_name, _, _, _, _, status_name, _, _, _ = task
         item.setText(task_name)
         item.update_color()
         item.treeWidget().takeTopLevelItem(item.treeWidget().indexOfTopLevelItem(item))
@@ -2359,7 +2399,7 @@ class TodoDialog(QDialog):
             else:
                 self.kanban_board.popup_window.close()
         popup_task_window.show()
-        popup_task_window.task_timer.start_timer()
+        #popup_task_window.task_timer.start_timer()
         self.kanban_board.popup_window = popup_task_window
         self.kanban_board.close()
         self.close()
@@ -2437,6 +2477,7 @@ class TodoDialog(QDialog):
                     delete_subtask_from_db_by_api(subtask_id)
                     self.parent_task.setProperty("subtask_id", None)
                     self.parent_task.setProperty("parent_task_id", None)
+                    self.parent_task.setText("")
 
     def post_task(self): 
         task_name = self.task_name.text()
