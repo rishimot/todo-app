@@ -107,6 +107,7 @@ class DigitalTimerEditor(QLineEdit):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
+            self.clearFocus()
             self.disable()
         super().keyPressEvent(event) 
 
@@ -237,7 +238,7 @@ class DigitalTimer(QWidget):
         self.duration_time += 1 
         self.time_elapsed -= 1
         if self.time_elapsed >= 0:
-            minutes = (self.time_elapsed % 3600) // 60
+            minutes = self.time_elapsed // 60
             seconds = self.time_elapsed % 60
             self.label.setText(f'/ {minutes:03}:{seconds:02}' if not self.break_time else f'/ {minutes:02}:{seconds:02} (Break)')
             if self.time_elapsed == 0:
@@ -267,7 +268,7 @@ class DigitalTimer(QWidget):
         self.timer.stop()
         self.start_button.setPixmap(self.saisei_pixmap)
         self.start_button.mousePressEvent = lambda event: self.start_timer()
-        #self.label.mousePressEvent = lambda event: self.change_mode()
+        self.label.mousePressEvent = lambda event: self.start_edit_time() # lambda event: self.change_mode()
         if self.duration_time >= 60:
             end_time = datetime.datetime.now().strftime(self.time_format)
             if not self.break_time:
@@ -495,7 +496,7 @@ class PopupTaskWindow(QDialog):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        if not self.target.hasFocus():# and self.task_timer.is_timer_running():
+        if not self.target.hasFocus() and not self.task_timer.time_input.hasFocus():# and self.task_timer.is_timer_running():
             self.small_mode()
         super().leaveEvent(event)
 
